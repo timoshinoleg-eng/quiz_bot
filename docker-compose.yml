@@ -1,0 +1,98 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: quiz_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-quiz_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quiz_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-quiz_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-quiz_user} -d ${POSTGRES_DB:-quiz_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - quiz_network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: quiz_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - quiz_network
+
+  # Bot Application
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: quiz_bot
+    restart: unless-stopped
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-quiz_user}:${POSTGRES_PASSWORD:-quiz_pass}@postgres:5432/${POSTGRES_DB:-quiz_db}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_DB=0
+      - ENV=${ENV:-production}
+      - DEBUG=${DEBUG:-false}
+      - WEBHOOK_URL=${WEBHOOK_URL:-}
+      - WEBHOOK_PATH=${WEBHOOK_PATH:-/webhook}
+      - YOOKASSA_SHOP_ID=${YOOKASSA_SHOP_ID:-}
+      - YOOKASSA_SECRET_KEY=${YOOKASSA_SECRET_KEY:-}
+      - ANALYTICS_TOKEN=${ANALYTICS_TOKEN:-}
+    volumes:
+      - ./logs:/app/logs
+      - ./generated_cards:/app/generated_cards
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - quiz_network
+
+  # Nginx (для webhook и статики)
+  nginx:
+    image: nginx:alpine
+    container_name: quiz_nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_PORT:-80}:80"
+      - "${NGINX_SSL_PORT:-443}:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./generated_cards:/usr/share/nginx/html/cards:ro
+    depends_on:
+      - bot
+    networks:
+      - quiz_network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  quiz_network:
+    driver: bridge
