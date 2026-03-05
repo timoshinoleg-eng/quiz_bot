@@ -196,9 +196,9 @@ async def handle_bot_started(event):
 async def cmd_start(event):
     """Обработчик команды /start."""
     logger.info("Command /start received")
-    # ИСПРАВЛЕНО: используем sender.id и chat.id
-    user_id = event.message.sender.id
-    chat_id = event.message.chat.id
+    # ИСПРАВЛЕНО: используем sender.user_id и recipient.chat_id
+    user_id = event.message.sender.user_id
+    chat_id = event.message.recipient.chat_id  # или event.chat.id
     username = event.message.sender.username
     first_name = event.message.sender.first_name
     
@@ -262,8 +262,8 @@ async def cmd_play(event):
 @dp.message_created(Command('stats'))
 async def cmd_stats(event):
     """Обработчик команды /stats."""
-    user_id = event.message.sender.id
-    chat_id = event.message.chat.id
+    user_id = event.message.sender.user_id
+    chat_id = event.message.recipient.chat_id
     user = await db_manager.get_or_create_user(user_id)
     
     games_played = getattr(user, 'games_played', 0)
@@ -300,9 +300,9 @@ async def process_menu_callback(event, payload):
     action = payload.split(":")[1] if ":" in payload else ""
     
     if action == "play":
-        # ИСПРАВЛЕНО: используем sender.id и chat.id
-        user_id = event.message.sender.id
-        chat_id = event.message.chat.id
+        # ИСПРАВЛЕНО: используем sender.user_id и recipient.chat_id
+        user_id = event.message.sender.user_id
+        chat_id = event.message.recipient.chat_id
         state = await get_context(user_id)
         await state.set_state(State.SELECT_TOPIC)
         
@@ -313,14 +313,14 @@ async def process_menu_callback(event, payload):
 async def process_topic_callback(event, payload):
     """Обработка выбора темы."""
     topic = payload.split(":")[1] if ":" in payload else ""
-    chat_id = event.message.chat.id
+    chat_id = event.message.recipient.chat_id
     
     if topic == "back":
         keyboard = get_main_menu_keyboard(False)
         await bot.send_message(chat_id=chat_id, text="Главное меню:", attachments=[keyboard] if keyboard else None)
         return
     
-    user_id = event.message.sender.id
+    user_id = event.message.sender.user_id
     state = await get_context(user_id)
     await state.update_data(selected_topic=topic)
     await state.set_state(State.SELECT_DIFFICULTY)
@@ -348,8 +348,8 @@ async def process_answer_callback(event, payload):
 
 async def start_game_flow(event):
     """Запускает процесс начала игры."""
-    user_id = event.message.sender.id
-    chat_id = event.message.chat.id
+    user_id = event.message.sender.user_id
+    chat_id = event.message.recipient.chat_id
     state = await get_context(user_id)
     await state.set_state(State.SELECT_TOPIC)
     
