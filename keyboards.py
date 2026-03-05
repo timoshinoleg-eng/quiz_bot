@@ -1,121 +1,133 @@
-"""Inline-клавиатуры для MAX-Квиз (используем InlineKeyboardBuilder)."""
-import logging
-from typing import Optional
+"""Inline-клавиатуры для MAX-Квиз (собственные Pydantic модели для maxapi 0.9.15).
 
-# ИСПРАВЛЕНО: используем InlineKeyboardBuilder и CallbackButton
+Используем собственные модели вместо встроенных CallbackButton/ChatButton 
+из-за бага с discriminator в Union-типах maxapi 0.9.15.
+"""
+import logging
+from typing import List, Optional, Literal
+from pydantic import BaseModel, Field
+
+# Импортируем Attachment для наследования
 try:
-    from maxapi.utils.inline_keyboard import InlineKeyboardBuilder
-    from maxapi.types import CallbackButton
-    MAXAPI_TYPES_AVAILABLE = True
-except ImportError as e:
-    MAXAPI_TYPES_AVAILABLE = False
-    logging.warning(f"maxapi types not available: {e}")
+    from maxapi.types import Attachment
+    MAXAPI_AVAILABLE = True
+except ImportError:
+    MAXAPI_AVAILABLE = False
+    Attachment = BaseModel
 
 logger = logging.getLogger(__name__)
 
 
-def get_main_menu_keyboard(is_premium: bool = False) -> Optional[object]:
+class InlineKeyboardButton(BaseModel):
+    """Универсальная модель кнопки inline-клавиатуры.
+    
+    ЗАМЕНЯЕТ неработающие CallbackButton/ChatButton из maxapi.types.
+    """
+    type: Literal["callback", "link", "request_contact", "request_geo_location"] = "callback"
+    text: str = Field(..., min_length=1, max_length=64, description="Текст на кнопке")
+    payload: Optional[str] = Field(default=None, max_length=64, description="Данные для callback")
+    
+    @classmethod
+    def callback(cls, text: str, payload: str) -> "InlineKeyboardButton":
+        """Фабричный метод для создания callback-кнопки."""
+        return cls(type="callback", text=text, payload=payload)
+
+
+class InlineKeyboardPayload(BaseModel):
+    """Содержимое payload для inline-клавиатуры."""
+    buttons: List[List[InlineKeyboardButton]]  # двумерный массив: ряды → кнопки
+    
+    @classmethod
+    def vertical(cls, *buttons: InlineKeyboardButton) -> "InlineKeyboardPayload":
+        """Вертикальный список кнопок (по одной в ряду)."""
+        return cls(buttons=[[btn] for btn in buttons])
+
+
+class InlineKeyboardAttachment(Attachment):
+    """Полное вложение inline-клавиатуры для передачи в send_message.
+    
+    Наследуется от Attachment для совместимости с maxapi 0.9.15.
+    """
+    type: Literal["inline_keyboard"] = Field(default="inline_keyboard", frozen=True)
+    payload: InlineKeyboardPayload
+    
+    @classmethod
+    def from_buttons(cls, *buttons: InlineKeyboardButton) -> "InlineKeyboardAttachment":
+        """Быстрое создание клавиатуры из кнопок (вертикальный список)."""
+        return cls(payload=InlineKeyboardPayload.vertical(*buttons))
+
+
+# === ФАБРИЧНЫЕ ФУНКЦИИ ДЛЯ БОТА ===
+
+def get_main_menu_keyboard(is_premium: bool = False) -> Optional[InlineKeyboardAttachment]:
     """Главное меню бота."""
-    if not MAXAPI_TYPES_AVAILABLE:
+    if not MAXAPI_AVAILABLE:
         return None
     
-    builder = InlineKeyboardBuilder()
-    
-    builder.row(
-        CallbackButton(text="Играть", payload="menu:play"),
+    return InlineKeyboardAttachment.from_buttons(
+        InlineKeyboardButton.callback("Начать игру", "menu:play"),
+        InlineKeyboardButton.callback("Статистика", "menu:stats"),
+        InlineKeyboardButton.callback("Premium", "menu:premium"),
+        InlineKeyboardButton.callback("Помощь", "menu:help"),
     )
-    builder.row(
-        CallbackButton(text="Статистика", payload="menu:stats"),
-    )
-    builder.row(
-        CallbackButton(text="Premium", payload="menu:premium"),
-    )
-    builder.row(
-        CallbackButton(text="Помощь", payload="menu:help"),
-    )
-    
-    return builder.as_markup()
 
 
-def get_topics_keyboard() -> Optional[object]:
+def get_topics_keyboard() -> Optional[InlineKeyboardAttachment]:
     """Выбор темы викторины."""
-    if not MAXAPI_TYPES_AVAILABLE:
+    if not MAXAPI_AVAILABLE:
         return None
     
-    builder = InlineKeyboardBuilder()
-    
-    builder.row(CallbackButton(text="История", payload="topic:history"))
-    builder.row(CallbackButton(text="Наука", payload="topic:science"))
-    builder.row(CallbackButton(text="Спорт", payload="topic:sport"))
-    builder.row(CallbackButton(text="География", payload="topic:geography"))
-    builder.row(CallbackButton(text="Искусство", payload="topic:art"))
-    builder.row(CallbackButton(text="Назад", payload="topic:back"))
-    
-    return builder.as_markup()
+    return InlineKeyboardAttachment.from_buttons(
+        InlineKeyboardButton.callback("История", "topic:history"),
+        InlineKeyboardButton.callback("Наука", "topic:science"),
+        InlineKeyboardButton.callback("Спорт", "topic:sport"),
+        InlineKeyboardButton.callback("География", "topic:geography"),
+        InlineKeyboardButton.callback("Искусство", "topic:art"),
+        InlineKeyboardButton.callback("Назад", "topic:back"),
+    )
 
 
-def get_stats_keyboard() -> Optional[object]:
+def get_stats_keyboard() -> Optional[InlineKeyboardAttachment]:
     """Клавиатура статистики."""
-    if not MAXAPI_TYPES_AVAILABLE:
+    if not MAXAPI_AVAILABLE:
         return None
     
-    builder = InlineKeyboardBuilder()
-    
-    builder.row(
-        CallbackButton(text="Обновить", payload="menu:stats"),
+    return InlineKeyboardAttachment.from_buttons(
+        InlineKeyboardButton.callback("Обновить", "menu:stats"),
+        InlineKeyboardButton.callback("В меню", "menu:back"),
     )
-    builder.row(
-        CallbackButton(text="В меню", payload="menu:back"),
-    )
-    
-    return builder.as_markup()
 
 
-def get_premium_keyboard() -> Optional[object]:
+def get_premium_keyboard() -> Optional[InlineKeyboardAttachment]:
     """Клавиатура Premium."""
-    if not MAXAPI_TYPES_AVAILABLE:
+    if not MAXAPI_AVAILABLE:
         return None
     
-    builder = InlineKeyboardBuilder()
-    
-    builder.row(
-        CallbackButton(text="Оформить", payload="premium:buy"),
+    return InlineKeyboardAttachment.from_buttons(
+        InlineKeyboardButton.callback("Оформить", "premium:buy"),
+        InlineKeyboardButton.callback("В меню", "menu:back"),
     )
-    builder.row(
-        CallbackButton(text="В меню", payload="menu:back"),
-    )
-    
-    return builder.as_markup()
 
 
-def get_answers_keyboard(answers: list, current_index: int, game_id: int) -> Optional[object]:
+def get_answers_keyboard(answers: List[str], current_index: int, game_id: int) -> Optional[InlineKeyboardAttachment]:
     """Клавиатура с вариантами ответов."""
-    if not MAXAPI_TYPES_AVAILABLE:
+    if not MAXAPI_AVAILABLE:
         return None
     
-    builder = InlineKeyboardBuilder()
-    
+    buttons = []
     for idx, answer in enumerate(answers[:4]):
         payload = f"answer:{game_id}:{current_index}:{idx}:False"
-        builder.row(
-            CallbackButton(text=f"{idx + 1}. {answer[:50]}", payload=payload)
-        )
+        buttons.append(InlineKeyboardButton.callback(f"{idx + 1}. {answer[:50]}", payload))
     
-    return builder.as_markup()
+    return InlineKeyboardAttachment.from_buttons(*buttons)
 
 
-def get_game_over_keyboard(game_id: int) -> Optional[object]:
+def get_game_over_keyboard(game_id: int) -> Optional[InlineKeyboardAttachment]:
     """Клавиатура конца игры."""
-    if not MAXAPI_TYPES_AVAILABLE:
+    if not MAXAPI_AVAILABLE:
         return None
     
-    builder = InlineKeyboardBuilder()
-    
-    builder.row(
-        CallbackButton(text="Играть снова", payload="game:restart"),
+    return InlineKeyboardAttachment.from_buttons(
+        InlineKeyboardButton.callback("Играть снова", "game:restart"),
+        InlineKeyboardButton.callback("Статистика", "menu:stats"),
     )
-    builder.row(
-        CallbackButton(text="Статистика", payload="menu:stats"),
-    )
-    
-    return builder.as_markup()
