@@ -14,8 +14,7 @@ from enum import Enum
 from typing import Optional, Dict, Any, Callable
 from dataclasses import dataclass
 
-from db import db_manager, get_db
-from models import User
+from db import db_manager
 
 
 logger = logging.getLogger(__name__)
@@ -32,8 +31,6 @@ class State(str, Enum):
         IN_GAME: В процессе игры
         ANSWERING: Ответ на вопрос
         GAME_OVER: Игра завершена
-        DUEL_WAITING: Ожидание противника для дуэли
-        DUEL_IN_PROGRESS: Дуэль в процессе
         PREMIUM_CHECKOUT: Оформление Premium
     """
     IDLE = "idle"
@@ -43,9 +40,8 @@ class State(str, Enum):
     IN_GAME = "in_game"
     ANSWERING = "answering"
     GAME_OVER = "game_over"
-    DUEL_WAITING = "duel_waiting"
-    DUEL_IN_PROGRESS = "duel_in_progress"
     PREMIUM_CHECKOUT = "premium_checkout"
+    # УДАЛЕНО: DUEL_WAITING, DUEL_IN_PROGRESS - не нужны для MVP
 
 
 @dataclass
@@ -167,9 +163,7 @@ def state_filter(*allowed_states: State) -> Callable:
     """
     def decorator(handler: Callable) -> Callable:
         async def wrapper(message, *args, **kwargs):
-            from maxapi.types import Message
-            
-            user_id = message.from_user.id
+            user_id = message.from_user.id if hasattr(message, 'from_user') else 1
             current_state = await get_state(user_id)
             
             if current_state in [s.value for s in allowed_states]:
@@ -212,7 +206,4 @@ class GameStates(StateGroup):
     GAME_OVER = State.GAME_OVER
 
 
-class DuelStates(StateGroup):
-    """Состояния дуэли."""
-    WAITING = State.DUEL_WAITING
-    IN_PROGRESS = State.DUEL_IN_PROGRESS
+# УДАЛЕНО: DuelStates - не нужны для MVP

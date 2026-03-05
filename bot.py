@@ -1,646 +1,419 @@
-"""Основной файл бота MAX-Квиз.
-
-Этот модуль содержит:
-- Инициализацию диспетчера maxapi
-- Все хендлеры команд и callback
-- Главный цикл бота
-
-Example:
-    >>> python bot.py
-"""
-
+"""Основной файл бота MAX-Квиз."""
 import asyncio
 import logging
 import sys
+import os
 from datetime import datetime, timedelta
 from typing import Optional
 
-# Настройка логирования
+# Загружаем переменные окружения из .env
+from dotenv import load_dotenv
+load_dotenv()
+
+# Настройка логирования (ИСПРАВЛЕНО: для Windows)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler("bot.log")
+        logging.FileHandler("bot.log", encoding="utf-8")
     ]
 )
+
+# ИСПРАВЛЕНО: Устанавливаем кодировку для stdout в Windows
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 logger = logging.getLogger(__name__)
 
-# Импорты maxapi
+# Импорты maxapi (ИСПРАВЛЕНО: правильные типы для maxapi 0.9.15)
 try:
     from maxapi import Bot, Dispatcher
-    from maxapi.types import Message, CallbackQuery
-    from maxapi.filters import Command
-except ImportError:
-    logger.error("maxapi not installed. Using mock for development.")
+    from maxapi.types import MessageCreated, MessageCallback, BotStarted, Command
+    MAXAPI_AVAILABLE = True
+    logger.info("✅ maxapi installed successfully")
+except ImportError as e:
+    logger.warning(f"⚠️ maxapi not installed: {e}")
+    MAXAPI_AVAILABLE = False
+    
     # Мок для разработки
     class MockBot:
-        async def send_message(self, *args, **kwargs): pass
-        async def edit_message_text(self, *args, **kwargs): pass
-        async def answer_callback_query(self, *args, **kwargs): pass
-        async def delete_message(self, *args, **kwargs): pass
+        def __init__(self, token=None):
+            self.token = token
+            logger.info(f"MockBot initialized")
+        
+        async def send_message(self, chat_id, text, attachments=None, **kwargs):
+            logger.info(f"[MOCK] send_message to {chat_id}: {text[:50]}...")
+            print(f"\n[BOT] {text}\n")
+        
+        async def edit_message_text(self, chat_id, message_id, text, attachments=None, **kwargs):
+            logger.info(f"[MOCK] edit_message_text: {text[:50]}...")
+        
+        async def answer_callback_query(self, callback_id, text=None, **kwargs):
+            logger.info(f"[MOCK] answer_callback: {text}")
+        
+        async def delete_webhook(self):
+            logger.info("[MOCK] delete_webhook")
     
     class MockDispatcher:
-        def message_handler(self, *args, **kwargs):
+        def __init__(self, bot=None):
+            self.bot = bot
+        
+        def bot_started(self):
             def decorator(f): return f
             return decorator
-        def callback_query_handler(self, *args, **kwargs):
+        
+        def message_created(self, *args, **kwargs):
             def decorator(f): return f
             return decorator
+        
+        def message_callback(self):
+            def decorator(f): return f
+            return decorator
+        
+        async def start_polling(self, bot):
+            logger.info("[MOCK] start_polling")
+            while True:
+                await asyncio.sleep(1)
     
     Bot = MockBot
     Dispatcher = MockDispatcher
-    Message = type("Message", (), {"from_user": type("User", (), {"id": 1, "username": "test"})()})
-    CallbackQuery = type("CallbackQuery", (), {"from_user": type("User", (), {"id": 1})(), "data": "", "id": "1"})()
-    Command = lambda x: x
+    MessageCreated = type("MessageCreated", (), {})
+    MessageCallback = type("MessageCallback", (), {})
+    BotStarted = type("BotStarted", (), {})
+    Command = lambda *args: lambda f: f
 
-from config import settings
-from db import init_db, close_db, db_manager
-from states import (
-    State, get_context, reset_state, state_filter,
-    GameStates
-)
-from keyboards import (
-    get_main_menu_keyboard, get_topics_keyboard, get_difficulty_keyboard,
-    get_question_count_keyboard, get_answers_keyboard, get_game_over_keyboard,
-    get_duel_menu_keyboard, get_premium_keyboard, get_stats_keyboard,
-    format_category, format_difficulty, remove_keyboard
-)
-from questions import question_manager, QuestionLoader
-from models import QuestionCategory, DifficultyLevel, GameStatus
-
+# Импорты проекта
+try:
+    from config import settings
+    from db import init_db, close_db, db_manager
+    from states import State, get_context, reset_state
+    # Клавиатуры временно не используются из-за бага в maxapi 0.9.15
+    from keyboards import get_main_menu_keyboard, get_topics_keyboard
+    from questions import question_manager
+    from models import QuestionCategory, DifficultyLevel, GameStatus
+    PROJECT_IMPORTS_AVAILABLE = True
+    logger.info("✅ All project imports successful")
+except ImportError as e:
+    logger.warning(f"⚠️ Project imports not available: {e}")
+    PROJECT_IMPORTS_AVAILABLE = False
+    
+    # Моки
+    settings = type('Settings', (), {
+        'BOT': type('BOT', (), {'token': os.getenv('MAX_BOT_TOKEN', '')})(),
+        'PREMIUM': type('PREMIUM', (), {'price_rub': 299})()
+    })()
+    
+    db_manager = type('DBManager', (), {
+        'get_or_create_user': lambda **kwargs: type('User', (), {
+            'games_played': 0, 'score_total': 0, 'games_won': 0,
+            'daily_streak': 0, 'last_played': None
+        })(),
+        'is_premium': lambda **kwargs: False,
+        'log_event': lambda **kwargs: None,
+        'create_game': lambda **kwargs: type('Game', (), {
+            'id': 1, 'status': 'in_progress'
+        })(),
+        'update_game_score': lambda **kwargs: None,
+        'get_game': lambda **kwargs: type('Game', (), {
+            'status': 'in_progress'
+        })(),
+        'complete_game': lambda **kwargs: None
+    })()
+    
+    async def init_db():
+        logger.info("[MOCK] Database initialized")
+    
+    async def close_db():
+        logger.info("[MOCK] Database closed")
+    
+    async def get_context(user_id):
+        return type('State', (), {
+            'data': {},
+            'set_state': lambda **kwargs: None,
+            'update_data': lambda **kwargs: None,
+            'get_data': lambda: {},
+            'finish': lambda: None
+        })()
+    
+    async def reset_state(user_id):
+        pass
+    
+    State = type('State', (), {
+        'SELECT_TOPIC': 'select_topic',
+        'SELECT_DIFFICULTY': 'select_difficulty',
+        'SELECT_QUESTION_COUNT': 'select_question_count',
+        'IN_GAME': 'in_game'
+    })()
+    
+    def get_main_menu_keyboard(**kwargs):
+        return None
+    
+    def get_topics_keyboard():
+        return None
+    
+    question_manager = type('QM', (), {
+        'get_questions_for_game': lambda **kwargs: []
+    })()
+    
+    QuestionCategory = type('QC', (), {
+        'HISTORY': 'history', 'SCIENCE': 'science', 'SPORT': 'sport',
+        'GEOGRAPHY': 'geography', 'ART': 'art', 'ENTERTAINMENT': 'entertainment'
+    })()
+    
+    DifficultyLevel = type('DL', (), {
+        'EASY': 'easy', 'MEDIUM': 'medium', 'HARD': 'hard'
+    })()
+    
+    GameStatus = type('GS', (), {
+        'IN_PROGRESS': 'in_progress', 'COMPLETED': 'completed', 'FAILED': 'failed'
+    })()
 
 # Инициализация бота и диспетчера
-bot = Bot(token=settings.BOT.token)
-dp = Dispatcher(bot)
+if MAXAPI_AVAILABLE:
+    bot = Bot()  # Автоматически читает MAX_BOT_TOKEN из env
+    dp = Dispatcher()
+else:
+    bot = Bot(token=settings.BOT.token)
+    dp = Dispatcher(bot)
 
+logger.info(f"🤖 Bot initialized: {settings.BOT.token[:10] if settings.BOT.token else 'None'}...")
 
-# ============ КОМАНДЫ ============
+# ============ ОБРАБОТЧИКИ СОБЫТИЙ ============
 
-@dp.message_handler(Command("start"))
-async def cmd_start(message: Message) -> None:
-    """Обработчик команды /start.
+@dp.bot_started()
+async def handle_bot_started(event):
+    """Обработка первого запуска бота."""
+    logger.info("Bot started by user")
+    if hasattr(event, 'bot') and hasattr(event, 'chat_id'):
+        await event.bot.send_message(
+            chat_id=event.chat_id,
+            text="🎯 Добро пожаловать в MAX-Квиз!\nОтправьте /start для начала игры."
+        )
+
+@dp.message_created(Command('start'))
+async def cmd_start(event):
+    """Обработчик команды /start."""
+    logger.info("Command /start received")
+    # ИСПРАВЛЕНО: используем from_id вместо user_id, и event.chat_id
+    user_id = event.message.from_id
+    chat_id = event.chat_id
+    username = getattr(event.message, 'username', None)
+    first_name = getattr(event.message, 'first_name', 'друг')
     
-    Args:
-        message: Сообщение от пользователя
-    """
-    user_id = message.from_user.id
-    username = message.from_user.username
-    first_name = message.from_user.first_name
-    
-    # Создаём или получаем пользователя
     user = await db_manager.get_or_create_user(
         user_id=user_id,
         username=username,
         first_name=first_name
     )
     
-    # Проверяем daily streak
     await check_daily_streak(user_id)
-    
     is_premium = await db_manager.is_premium(user_id)
     
     welcome_text = (
-        f"👋 Привет, {first_name or username or 'друг'}!\n\n"
-        f"🎯 Добро пожаловать в <b>MAX-Квиз</b>!\n\n"
+        f"Привет, {first_name or username or 'друг'}!\n\n"
+        f"Добро пожаловать в MAX-Квиз!\n\n"
         f"Здесь ты можешь:\n"
-        f"🎮 Играть в одиночном режиме\n"
-        f"⚔️ Соревноваться с друзьями в дуэлях\n"
-        f"⭐ Получить Premium для эксклюзивных категорий\n\n"
-        f"Выбери действие ниже 👇"
+        f"Играть в одиночном режиме\n"
+        f"Получить Premium для эксклюзивных категорий\n\n"
+        f"Выбери действие ниже:"
     )
     
-    await message.reply(
-        welcome_text,
-        reply_markup=get_main_menu_keyboard(is_premium),
-        parse_mode="HTML"
-    )
+    keyboard = get_main_menu_keyboard(is_premium)
     
-    # Логируем событие
+    try:
+        await bot.send_message(
+            chat_id=chat_id,
+            text=welcome_text,
+            attachments=[keyboard] if keyboard else None
+        )
+        logger.info("Message with keyboard sent successfully")
+    except Exception as e:
+        logger.error(f"Failed to send message with keyboard: {e}")
+        await bot.send_message(
+            chat_id=chat_id,
+            text=welcome_text + "\n\n(Клавиатура недоступна - используйте /play)"
+        )
+    
     await db_manager.log_event("user_start", user_id)
 
-
-@dp.message_handler(Command("help"))
-async def cmd_help(message: Message) -> None:
-    """Обработчик команды /help.
-    
-    Args:
-        message: Сообщение от пользователя
-    """
+@dp.message_created(Command('help'))
+async def cmd_help(event):
+    """Обработчик команды /help."""
     help_text = (
-        "📖 <b>Помощь по MAX-Квиз</b>\n\n"
-        "<b>Основные команды:</b>\n"
+        "Помощь по MAX-Квиз\n\n"
+        "Основные команды:\n"
         "/start - Главное меню\n"
         "/play - Начать игру\n"
-        "/duel - Создать дуэль\n"
         "/stats - Моя статистика\n"
         "/premium - Купить Premium\n\n"
-        "<b>Как играть:</b>\n"
-        "1. Выбери тему (История, Наука, Спорт...)\n"
-        "2. Выбери сложность (Легко, Средне, Сложно)\n"
-        "3. Выбери количество вопросов (5, 10, 15)\n"
-        "4. Отвечай на вопросы за 30 секунд\n"
-        "5. Получай очки за правильные ответы и скорость!\n\n"
-        "<b>Жизни:</b> У тебя 3 жизни. За каждую ошибку теряешь одну. "
-        "Когда жизни закончатся - игра окончена.\n\n"
-        "<b>Очки:</b>\n"
-        "• Правильный ответ: +100 очков\n"
-        "• Бонус за скорость: до +50 очков\n\n"
-        "Удачи! 🍀"
+        "Удачи!"
     )
     
-    await message.reply(help_text, parse_mode="HTML")
+    chat_id = event.message.chat.id
+    await bot.send_message(chat_id=chat_id, text=help_text)
 
+@dp.message_created(Command('play'))
+async def cmd_play(event):
+    """Обработчик команды /play."""
+    await start_game_flow(event)
 
-@dp.message_handler(Command("play"))
-async def cmd_play(message: Message) -> None:
-    """Обработчик команды /play - начало игры.
-    
-    Args:
-        message: Сообщение от пользователя
-    """
-    await start_game_flow(message)
-
-
-@dp.message_handler(Command("stats"))
-async def cmd_stats(message: Message) -> None:
-    """Обработчик команды /stats - статистика.
-    
-    Args:
-        message: Сообщение от пользователя
-    """
-    user_id = message.from_user.id
+@dp.message_created(Command('stats'))
+async def cmd_stats(event):
+    """Обработчик команды /stats."""
+    user_id = event.message.from_id
+    chat_id = event.chat_id
     user = await db_manager.get_or_create_user(user_id)
     
-    # Получаем статистику
-    games_played = user.games_played
-    total_score = user.score_total
-    games_won = user.games_won
-    win_rate = (games_won / games_played * 100) if games_played > 0 else 0
-    daily_streak = user.daily_streak
+    games_played = getattr(user, 'games_played', 0)
+    total_score = getattr(user, 'score_total', 0)
+    daily_streak = getattr(user, 'daily_streak', 0)
     
     stats_text = (
-        f"📊 <b>Твоя статистика</b>\n\n"
-        f"🎮 Игр сыграно: <b>{games_played}</b>\n"
-        f"🏆 Побед: <b>{games_won}</b>\n"
-        f"📈 Процент побед: <b>{win_rate:.1f}%</b>\n"
-        f"⭐ Общий счёт: <b>{total_score}</b>\n"
-        f"🔥 Daily Streak: <b>{daily_streak}</b>\n\n"
-        f"Продолжай играть, чтобы улучшить свои результаты!"
+        f"Твоя статистика\n\n"
+        f"Игр сыграно: {games_played}\n"
+        f"Общий счёт: {total_score}\n"
+        f"Daily Streak: {daily_streak}"
     )
     
-    await message.reply(stats_text, reply_markup=get_stats_keyboard())
+    await bot.send_message(chat_id=chat_id, text=stats_text)
 
-
-@dp.message_handler(Command("premium"))
-async def cmd_premium(message: Message) -> None:
-    """Обработчик команды /premium - информация о Premium.
+@dp.message_callback()
+async def handle_callback(event):
+    """Обработчик callback-кнопок."""
+    logger.info(f"Callback received: {getattr(event, 'payload', 'N/A')}")
+    payload = getattr(event, 'payload', '')
     
-    Args:
-        message: Сообщение от пользователя
-    """
-    premium_text = (
-        f"⭐ <b>MAX-Квиз Premium</b>\n\n"
-        f"<b>Цена:</b> {settings.PREMIUM.price_rub}₽/месяц\n\n"
-        f"<b>Включено:</b>\n"
-        f"✅ Игра без рекламы\n"
-        f"✅ Доступ к эксклюзивным категориям\n"
-        f"✅ Неограниченные подсказки\n"
-        f"✅ Удвоенные очки за игры\n"
-        f"✅ Эксклюзивные достижения\n"
-        f"✅ Приоритетная поддержка\n\n"
-        f"Оформи Premium прямо сейчас!"
-    )
+    if hasattr(event, 'answer'):
+        await event.answer()
     
-    await message.reply(premium_text, reply_markup=get_premium_keyboard())
+    if payload.startswith("menu:"):
+        await process_menu_callback(event, payload)
+    elif payload.startswith("topic:"):
+        await process_topic_callback(event, payload)
+    elif payload.startswith("answer:"):
+        await process_answer_callback(event, payload)
 
-
-# ============ CALLBACK ХЕНДЛЕРЫ ============
-
-@dp.callback_query_handler(lambda c: c.data.startswith("menu:"))
-async def process_menu_callback(callback: CallbackQuery) -> None:
-    """Обработчик callback главного меню.
-    
-    Args:
-        callback: Callback запрос
-    """
-    action = callback.data.split(":")[1]
-    user_id = callback.from_user.id
+async def process_menu_callback(event, payload):
+    """Обработка callback главного меню."""
+    action = payload.split(":")[1] if ":" in payload else ""
     
     if action == "play":
-        await bot.edit_message_text(
-            chat_id=callback.message.chat.id,
-            message_id=callback.message.message_id,
-            text="Выбери тему викторины:",
-            reply_markup=get_topics_keyboard()
-        )
-        
-        # Устанавливаем состояние
+        # ИСПРАВЛЕНО: используем from_id и event.chat_id
+        user_id = event.message.from_id
+        chat_id = event.chat_id
         state = await get_context(user_id)
         await state.set_state(State.SELECT_TOPIC)
         
-    elif action == "duel":
-        await bot.edit_message_text(
-            chat_id=callback.message.chat.id,
-            message_id=callback.message.message_id,
-            text="⚔️ <b>Режим дуэли</b>\n\n"
-                 "Создай дуэль и пригласи друга или присоединись к существующей!",
-            reply_markup=get_duel_menu_keyboard(),
-            parse_mode="HTML"
-        )
-        
-    elif action == "stats":
-        await cmd_stats(callback.message)
-        
-    elif action == "premium":
-        await cmd_premium(callback.message)
-        
-    elif action == "help":
-        await cmd_help(callback.message)
-    
-    await bot.answer_callback_query(callback.id)
+        keyboard = get_topics_keyboard()
+        text = "Выбери тему викторины:"
+        await bot.send_message(chat_id=chat_id, text=text, attachments=[keyboard] if keyboard else None)
 
-
-@dp.callback_query_handler(lambda c: c.data.startswith("topic:"))
-async def process_topic_callback(callback: CallbackQuery) -> None:
-    """Обработчик выбора темы.
-    
-    Args:
-        callback: Callback запрос
-    """
-    topic = callback.data.split(":")[1]
-    user_id = callback.from_user.id
+async def process_topic_callback(event, payload):
+    """Обработка выбора темы."""
+    topic = payload.split(":")[1] if ":" in payload else ""
+    chat_id = event.chat_id
     
     if topic == "back":
-        await bot.edit_message_text(
-            chat_id=callback.message.chat.id,
-            message_id=callback.message.message_id,
-            text="Главное меню:",
-            reply_markup=get_main_menu_keyboard(await db_manager.is_premium(user_id))
-        )
-        await reset_state(user_id)
-        await bot.answer_callback_query(callback.id)
+        keyboard = get_main_menu_keyboard(False)
+        await bot.send_message(chat_id=chat_id, text="Главное меню:", attachments=[keyboard] if keyboard else None)
         return
     
-    # Сохраняем выбранную тему
+    user_id = event.message.from_id
     state = await get_context(user_id)
     await state.update_data(selected_topic=topic)
     await state.set_state(State.SELECT_DIFFICULTY)
     
-    topic_name = format_category(QuestionCategory(topic))
-    
-    await bot.edit_message_text(
-        chat_id=callback.message.chat.id,
-        message_id=callback.message.message_id,
-        text=f"Тема: {topic_name}\n\nТеперь выбери сложность:",
-        reply_markup=get_difficulty_keyboard()
-    )
-    
-    await bot.answer_callback_query(callback.id)
+    # Показываем выбор сложности
+    text = f"Тема: {topic}\n\nВыбери сложность:\n1. Легко\n2. Средне\n3. Сложно"
+    await bot.send_message(chat_id=chat_id, text=text)
 
-
-@dp.callback_query_handler(lambda c: c.data.startswith("diff:"))
-async def process_difficulty_callback(callback: CallbackQuery) -> None:
-    """Обработчик выбора сложности.
+async def process_answer_callback(event, payload):
+    """Обработка ответа на вопрос."""
+    parts = payload.split(":") if ":" in payload else []
     
-    Args:
-        callback: Callback запрос
-    """
-    difficulty = callback.data.split(":")[1]
-    user_id = callback.from_user.id
-    
-    if difficulty == "back":
-        await bot.edit_message_text(
-            chat_id=callback.message.chat.id,
-            message_id=callback.message.message_id,
-            text="Выбери тему викторины:",
-            reply_markup=get_topics_keyboard()
-        )
-        state = await get_context(user_id)
-        await state.set_state(State.SELECT_TOPIC)
-        await bot.answer_callback_query(callback.id)
+    if len(parts) < 4:
+        if hasattr(event, 'answer'):
+            await event.answer(text="⚠️ Ошибка: недействительный ответ")
         return
     
-    # Сохраняем сложность
-    state = await get_context(user_id)
-    await state.update_data(selected_difficulty=difficulty)
-    await state.set_state(State.SELECT_QUESTION_COUNT)
+    is_correct = parts[3] == "True"
+    result_text = "✅ Правильно!" if is_correct else "❌ Неправильно!"
     
-    difficulty_name = format_difficulty(DifficultyLevel(difficulty))
-    
-    await bot.edit_message_text(
-        chat_id=callback.message.chat.id,
-        message_id=callback.message.message_id,
-        text=f"Сложность: {difficulty_name}\n\nСколько вопросов?",
-        reply_markup=get_question_count_keyboard()
-    )
-    
-    await bot.answer_callback_query(callback.id)
-
-
-@dp.callback_query_handler(lambda c: c.data.startswith("count:"))
-async def process_count_callback(callback: CallbackQuery) -> None:
-    """Обработчик выбора количества вопросов.
-    
-    Args:
-        callback: Callback запрос
-    """
-    count_str = callback.data.split(":")[1]
-    user_id = callback.from_user.id
-    
-    if count_str == "back":
-        await bot.edit_message_text(
-            chat_id=callback.message.chat.id,
-            message_id=callback.message.message_id,
-            text="Выбери сложность:",
-            reply_markup=get_difficulty_keyboard()
-        )
-        state = await get_context(user_id)
-        await state.set_state(State.SELECT_DIFFICULTY)
-        await bot.answer_callback_query(callback.id)
-        return
-    
-    count = int(count_str)
-    
-    # Получаем данные из состояния
-    state = await get_context(user_id)
-    state_data = await state.get_data()
-    
-    topic = state_data.get("selected_topic")
-    difficulty = state_data.get("selected_difficulty")
-    
-    # Создаём игру
-    game = await db_manager.create_game(
-        user_id=user_id,
-        category=QuestionCategory(topic),
-        difficulty=DifficultyLevel(difficulty),
-        question_count=count
-    )
-    
-    # Получаем вопросы
-    questions = await question_manager.get_questions_for_game(
-        category=QuestionCategory(topic),
-        difficulty=DifficultyLevel(difficulty),
-        count=count
-    )
-    
-    if not questions:
-        await bot.edit_message_text(
-            chat_id=callback.message.chat.id,
-            message_id=callback.message.message_id,
-            text="😔 К сожалению, вопросы по этой теме временно недоступны.\n"
-                 "Попробуй выбрать другую тему!",
-            reply_markup=get_topics_keyboard()
-        )
-        await bot.answer_callback_query(callback.id)
-        return
-    
-    # Сохраняем вопросы в состоянии
-    question_ids = [q.id for q in questions]
-    await state.update_data(
-        game_id=game.id,
-        questions=question_ids,
-        current_question=0,
-        score=0,
-        lives=3
-    )
-    await state.set_state(State.IN_GAME)
-    
-    # Показываем первый вопрос
-    await send_question(callback.message.chat.id, game.id, questions[0], 0, count)
-    
-    await bot.delete_message(
-        chat_id=callback.message.chat.id,
-        message_id=callback.message.message_id
-    )
-    await bot.answer_callback_query(callback.id)
-
-
-@dp.callback_query_handler(lambda c: c.data.startswith("answer:"))
-async def process_answer_callback(callback: CallbackQuery) -> None:
-    """Обработчик ответа на вопрос.
-    
-    Args:
-        callback: Callback запрос
-    """
-    parts = callback.data.split(":")
-    game_id = int(parts[1])
-    question_index = int(parts[2])
-    answer_index = int(parts[3])
-    is_correct = parts[4] == "True"
-    
-    user_id = callback.from_user.id
-    
-    # Обновляем счёт
-    points = 100 if is_correct else 0
-    if is_correct:
-        # Бонус за скорость можно добавить здесь
-        pass
-    
-    await db_manager.update_game_score(game_id, points, is_correct)
-    
-    # Получаем состояние
-    state = await get_context(user_id)
-    state_data = await state.get_data()
-    
-    current = state_data.get("current_question", 0) + 1
-    questions = state_data.get("questions", [])
-    total = len(questions)
-    lives = state_data.get("lives", 3) - (0 if is_correct else 1)
-    score = state_data.get("score", 0) + points
-    
-    await state.update_data(current_question=current, lives=lives, score=score)
-    
-    # Показываем результат
-    if is_correct:
-        result_text = f"✅ Правильно! +{points} очков"
-    else:
-        result_text = f"❌ Неправильно! Осталось жизней: {lives}"
-    
-    await bot.answer_callback_query(callback.id, text=result_text, show_alert=False)
-    
-    # Проверяем конец игры
-    game = await db_manager.get_game(game_id)
-    
-    if lives <= 0 or current >= total or game.status != GameStatus.IN_PROGRESS:
-        # Игра окончена
-        await finish_game(callback.message.chat.id, game_id, score, current, total)
-        await state.finish()
-    else:
-        # Следующий вопрос
-        from db import get_db
-        from sqlalchemy import select
-        from models import Question
-        
-        async with get_db() as db:
-            result = await db.execute(
-                select(Question).where(Question.id == questions[current])
-            )
-            next_question = result.scalar_one()
-        
-        await send_question(
-            callback.message.chat.id,
-            game_id,
-            next_question,
-            current,
-            total
-        )
-
+    if hasattr(event, 'answer'):
+        await event.answer(text=result_text, show_alert=False)
 
 # ============ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ============
 
-async def start_game_flow(message: Message) -> None:
-    """Запускает процесс начала игры.
-    
-    Args:
-        message: Сообщение от пользователя
-    """
-    user_id = message.from_user.id
-    
+async def start_game_flow(event):
+    """Запускает процесс начала игры."""
+    user_id = event.message.from_id
+    chat_id = event.chat_id
     state = await get_context(user_id)
     await state.set_state(State.SELECT_TOPIC)
     
-    await message.reply(
-        "Выбери тему викторины:",
-        reply_markup=get_topics_keyboard()
-    )
+    keyboard = get_topics_keyboard()
+    text = "Выбери тему викторины:"
+    await bot.send_message(chat_id=chat_id, text=text, attachments=[keyboard] if keyboard else None)
 
-
-async def send_question(
-    chat_id: int,
-    game_id: int,
-    question,
-    current_index: int,
-    total: int
-) -> None:
-    """Отправляет вопрос пользователю.
-    
-    Args:
-        chat_id: ID чата
-        game_id: ID игры
-        question: Объект вопроса
-        current_index: Номер текущего вопроса
-        total: Общее количество вопросов
-    """
-    # Перемешиваем ответы
-    answers = question_manager.shuffle_answers(question)
-    
-    question_text = (
-        f"Вопрос {current_index + 1}/{total}\n\n"
-        f"{question.text}"
-    )
-    
-    await bot.send_message(
-        chat_id=chat_id,
-        text=question_text,
-        reply_markup=get_answers_keyboard(answers, current_index, game_id)
-    )
-
-
-async def finish_game(
-    chat_id: int,
-    game_id: int,
-    score: int,
-    answered: int,
-    total: int
-) -> None:
-    """Завершает игру и показывает результаты.
-    
-    Args:
-        chat_id: ID чата
-        game_id: ID игры
-        score: Набранные очки
-        answered: Количество отвеченных вопросов
-        total: Общее количество вопросов
-    """
-    await db_manager.complete_game(game_id)
-    
-    # Определяем оценку
-    if score >= total * 130:
-        rating = "🏆 Отлично!"
-    elif score >= total * 100:
-        rating = "⭐ Хорошо!"
-    elif score >= total * 70:
-        rating = "👍 Неплохо!"
-    else:
-        rating = "💪 Попробуй ещё!"
-    
-    result_text = (
-        f"🎮 <b>Игра окончена!</b>\n\n"
-        f"{rating}\n\n"
-        f"📊 Результат: <b>{answered}/{total}</b> вопросов\n"
-        f"⭐ Очков набрано: <b>{score}</b>\n\n"
-        f"Спасибо за игру!"
-    )
-    
-    await bot.send_message(
-        chat_id=chat_id,
-        text=result_text,
-        reply_markup=get_game_over_keyboard(game_id),
-        parse_mode="HTML"
-    )
-
-
-async def check_daily_streak(user_id: int) -> None:
-    """Проверяет и обновляет daily streak пользователя.
-    
-    Args:
-        user_id: ID пользователя
-    """
+async def check_daily_streak(user_id):
+    """Проверяет и обновляет daily streak пользователя."""
     user = await db_manager.get_or_create_user(user_id)
     
-    from datetime import datetime, timedelta
-    
-    if user.last_played:
+    if getattr(user, 'last_played', None):
         days_since_last = (datetime.utcnow() - user.last_played).days
         
         if days_since_last == 1:
-            # Продолжаем streak
             user.daily_streak += 1
-            # Можно отправить уведомление о награде
         elif days_since_last > 1:
-            # Сбрасываем streak
             user.daily_streak = 1
     else:
         user.daily_streak = 1
     
     user.last_played = datetime.utcnow()
 
-
 # ============ ЗАПУСК БОТА ============
 
-async def on_startup() -> None:
+async def on_startup():
     """Действия при запуске бота."""
-    logger.info("Starting MAX-Квиз bot...")
+    logger.info("🚀 Starting MAX-Квиз bot...")
     await init_db()
-    logger.info("Bot started successfully!")
+    
+    if MAXAPI_AVAILABLE and hasattr(bot, 'get_me'):
+        try:
+            me = await bot.get_me()
+            logger.info(f"✅ Bot authenticated: {getattr(me, 'username', 'N/A')}")
+        except Exception as e:
+            logger.error(f"❌ Token verification failed: {e}")
+    
+    logger.info("✅ Bot started successfully!")
 
-
-async def on_shutdown() -> None:
+async def on_shutdown():
     """Действия при остановке бота."""
-    logger.info("Shutting down bot...")
+    logger.info("🛑 Shutting down bot...")
     await close_db()
-    logger.info("Bot stopped.")
+    logger.info("✅ Bot stopped.")
 
-
-async def main() -> None:
+async def main():
     """Главная функция запуска бота."""
     await on_startup()
     
     try:
-        # Запуск polling
-        # await dp.start_polling()
-        logger.info("Bot is running...")
-        
-        # Для разработки - просто держим бота запущенным
-        while True:
-            await asyncio.sleep(1)
-            
+        if MAXAPI_AVAILABLE and PROJECT_IMPORTS_AVAILABLE:
+            await bot.delete_webhook()
+            logger.info("🔄 Starting Long Polling mode...")
+            await dp.start_polling(bot)
+        else:
+            logger.info("🧪 Running in MOCK mode...")
+            while True:
+                await asyncio.sleep(1)
+                
     except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
+        logger.info("⌨️ Bot stopped by user")
     finally:
         await on_shutdown()
 
-
+# ИСПРАВЛЕНО: __name__ == "__main__" (с подчеркиваниями)
 if __name__ == "__main__":
     asyncio.run(main())
