@@ -1,19 +1,11 @@
-"""Inline-клавиатуры для MAX-Квиз (собственные Pydantic модели для maxapi 0.9.15).
+"""Inline-клавиатуры для MAX-Квиз (Pydantic модели для maxapi 0.9.15).
 
-Используем собственные модели вместо встроенных CallbackButton/ChatButton 
-из-за бага с discriminator в Union-типах maxapi 0.9.15.
+Полностью собственные модели без наследования от maxapi типов
+для избежания багов с Union-типами.
 """
 import logging
 from typing import List, Optional, Literal
 from pydantic import BaseModel, Field
-
-# Импортируем Attachment для наследования
-try:
-    from maxapi.types import Attachment
-    MAXAPI_AVAILABLE = True
-except ImportError:
-    MAXAPI_AVAILABLE = False
-    Attachment = BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -43,13 +35,20 @@ class InlineKeyboardPayload(BaseModel):
         return cls(buttons=[[btn] for btn in buttons])
 
 
-class InlineKeyboardAttachment(Attachment):
+class InlineKeyboardAttachment(BaseModel):
     """Полное вложение inline-клавиатуры для передачи в send_message.
     
-    Наследуется от Attachment для совместимости с maxapi 0.9.15.
+    НЕ наследуется от Attachment для избежания багов с discriminator.
     """
     type: Literal["inline_keyboard"] = Field(default="inline_keyboard", frozen=True)
     payload: InlineKeyboardPayload
+    
+    def model_dump(self, **kwargs):
+        # Явная реализация для гарантии корректной сериализации
+        return {
+            "type": self.type,
+            "payload": self.payload.model_dump(**kwargs)
+        }
     
     @classmethod
     def from_buttons(cls, *buttons: InlineKeyboardButton) -> "InlineKeyboardAttachment":
@@ -61,9 +60,6 @@ class InlineKeyboardAttachment(Attachment):
 
 def get_main_menu_keyboard(is_premium: bool = False) -> Optional[InlineKeyboardAttachment]:
     """Главное меню бота."""
-    if not MAXAPI_AVAILABLE:
-        return None
-    
     return InlineKeyboardAttachment.from_buttons(
         InlineKeyboardButton.callback("Начать игру", "menu:play"),
         InlineKeyboardButton.callback("Статистика", "menu:stats"),
@@ -74,9 +70,6 @@ def get_main_menu_keyboard(is_premium: bool = False) -> Optional[InlineKeyboardA
 
 def get_topics_keyboard() -> Optional[InlineKeyboardAttachment]:
     """Выбор темы викторины."""
-    if not MAXAPI_AVAILABLE:
-        return None
-    
     return InlineKeyboardAttachment.from_buttons(
         InlineKeyboardButton.callback("История", "topic:history"),
         InlineKeyboardButton.callback("Наука", "topic:science"),
@@ -89,9 +82,6 @@ def get_topics_keyboard() -> Optional[InlineKeyboardAttachment]:
 
 def get_stats_keyboard() -> Optional[InlineKeyboardAttachment]:
     """Клавиатура статистики."""
-    if not MAXAPI_AVAILABLE:
-        return None
-    
     return InlineKeyboardAttachment.from_buttons(
         InlineKeyboardButton.callback("Обновить", "menu:stats"),
         InlineKeyboardButton.callback("В меню", "menu:back"),
@@ -100,9 +90,6 @@ def get_stats_keyboard() -> Optional[InlineKeyboardAttachment]:
 
 def get_premium_keyboard() -> Optional[InlineKeyboardAttachment]:
     """Клавиатура Premium."""
-    if not MAXAPI_AVAILABLE:
-        return None
-    
     return InlineKeyboardAttachment.from_buttons(
         InlineKeyboardButton.callback("Оформить", "premium:buy"),
         InlineKeyboardButton.callback("В меню", "menu:back"),
@@ -111,9 +98,6 @@ def get_premium_keyboard() -> Optional[InlineKeyboardAttachment]:
 
 def get_answers_keyboard(answers: List[str], current_index: int, game_id: int) -> Optional[InlineKeyboardAttachment]:
     """Клавиатура с вариантами ответов."""
-    if not MAXAPI_AVAILABLE:
-        return None
-    
     buttons = []
     for idx, answer in enumerate(answers[:4]):
         payload = f"answer:{game_id}:{current_index}:{idx}:False"
@@ -124,9 +108,6 @@ def get_answers_keyboard(answers: List[str], current_index: int, game_id: int) -
 
 def get_game_over_keyboard(game_id: int) -> Optional[InlineKeyboardAttachment]:
     """Клавиатура конца игры."""
-    if not MAXAPI_AVAILABLE:
-        return None
-    
     return InlineKeyboardAttachment.from_buttons(
         InlineKeyboardButton.callback("Играть снова", "game:restart"),
         InlineKeyboardButton.callback("Статистика", "menu:stats"),
