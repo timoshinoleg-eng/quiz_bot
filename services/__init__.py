@@ -1,20 +1,11 @@
 """Services package for MAX-Квиз."""
 
-from .game_logic import GameSession, GameStats, AnswerResult, StreakManager, LeaderboardService
-from .duels import DuelService, DuelState, DuelMatchmaking
-from .monetization import PaymentService, PremiumManager, AdManager, SubscriptionPlans
+# Импортируем только безопасные модули
+try:
+    from .question_formatter import QuestionFormatter
+except ImportError:
+    QuestionFormatter = None
 
 __all__ = [
-    "GameSession",
-    "GameStats",
-    "AnswerResult",
-    "StreakManager",
-    "LeaderboardService",
-    "DuelService",
-    "DuelState",
-    "DuelMatchmaking",
-    "PaymentService",
-    "PremiumManager",
-    "AdManager",
-    "SubscriptionPlans",
+    "QuestionFormatter",
 ]

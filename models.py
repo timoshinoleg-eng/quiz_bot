@@ -75,8 +75,8 @@ class Question(Base):
     """Модель вопроса."""
     __tablename__ = "questions"
 
-    # ИСПРАВЛЕНО: autoincrement=True для SQLite совместимости
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    # ✅ ИСПРАВЛЕНО: Integer вместо BigInteger для SQLite autoincrement
+    id = Column(Integer, primary_key=True, autoincrement=True)
     text = Column(Text, nullable=False)
     category = Column(Enum(QuestionCategory), nullable=False)
     difficulty = Column(Enum(DifficultyLevel), nullable=False)
@@ -102,8 +102,9 @@ class Game(Base):
     """Модель игровой сессии (одиночный режим)."""
     __tablename__ = "games"
 
-    # ИСПРАВЛЕНО: autoincrement=True для SQLite совместимости
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    # ИСПРАВЛЕНО: Integer + autoincrement=True для SQLite совместимости
+    # Важно: используем Integer вместо BigInteger для корректного autoincrement в SQLite
+    id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
 
     # Настройки игры

@@ -1,84 +1,58 @@
-# Python
+﻿# Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual environments
 venv/
-ENV/
+venv_new/
 env/
+ENV/
 .venv
 
 # IDE
-.idea/
 .vscode/
+.idea/
 *.swp
 *.swo
 *~
-.DS_Store
 
-# Environment variables
-.env
-.env.local
-.env.*.local
+# Датасеты (НЕ коммитить!)
+RuBQ_2.0/
+quiz-siq/
+russian-facts-qa/
+ru-alpaca-quiz/
+rubq_retrieval_dataset/
+hf_datasets/
+data/dictionaries/
+data/generated/
+data/*.parquet
+data/*.jsonl
+data/*.csv
 
-# Database
+# Базы данных
 *.db
 *.sqlite
 *.sqlite3
+quiz_bot.db
 
-# Logs
-logs/
+# Логи
 *.log
+logs/
 
-# Generated files
-generated_cards/
-assets/
-
-# Testing
-.coverage
-htmlcov/
+# Тесты
+test_*.py
+*_test.py
 .pytest_cache/
-.tox/
 
-# Mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Alembic
-# Не игнорируем migrations/versions/*.py, только временные файлы
-migrations/__pycache__/
-migrations/versions/__pycache__/
-
-# Docker
-.dockerignore
-
-# Nginx
-nginx/ssl/
-
-# Backup files
+# Временные файлы
+tmp/
+temp/
+*.tmp
 *.bak
-*.backup
-/backups/
+*.cache
 
-# Local development
-local_settings.py
-docker-compose.override.yml
+# ОС
+.DS_Store
+Thumbs.db
+desktop.ini

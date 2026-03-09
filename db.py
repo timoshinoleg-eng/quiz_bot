@@ -239,8 +239,14 @@ class DatabaseManager:
                     game.completed_at = datetime.utcnow()
 
     @staticmethod
-    async def complete_game(game_id: int) -> None:
-        """Завершает игру."""
+    async def complete_game(game_id: int, score: int = None, correct_answers: int = None) -> None:
+        """Завершает игру.
+        
+        Args:
+            game_id: ID игры
+            score: Финальный счет (опционально, берется из game если не указан)
+            correct_answers: Количество правильных ответов (опционально)
+        """
         async with get_db() as db:
             game = await db.get(Game, game_id)
             if game:
@@ -248,10 +254,21 @@ class DatabaseManager:
                 from datetime import datetime
                 game.completed_at = datetime.utcnow()
                 
+                # Обновляем score если передан явно
+                if score is not None:
+                    game.score = score
+                if correct_answers is not None:
+                    game.correct_answers = correct_answers
+                
                 user = await db.get(User, game.user_id)
                 if user:
                     user.score_total += game.score
                     user.games_played += 1
+                    # Увеличиваем games_won если все ответы правильные
+                    if correct_answers and game.question_count and correct_answers == game.question_count:
+                        user.games_won += 1
+                
+                await db.commit()
 
     @staticmethod
     async def update_user_state(
@@ -286,6 +303,34 @@ class DatabaseManager:
             if row:
                 return row[0], row[1] or {}
             return None, {}
+
+    @staticmethod
+    async def get_random_questions(
+        category: Any,
+        difficulty: Any,
+        count: int
+    ) -> list:
+        """Получает случайные вопросы по категории и сложности.
+        
+        Args:
+            category: Категория вопросов
+            difficulty: Уровень сложности
+            count: Количество вопросов
+            
+        Returns:
+            list: Список вопросов
+        """
+        from sqlalchemy import func
+        
+        async with get_db() as db:
+            result = await db.execute(
+                select(Question)
+                .where(Question.category == category)
+                .where(Question.difficulty == difficulty)
+                .order_by(func.random())
+                .limit(count)
+            )
+            return list(result.scalars().all())
 
 
 # Глобальный экземпляр менеджера
