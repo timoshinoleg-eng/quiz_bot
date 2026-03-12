@@ -665,6 +665,12 @@ async def process_topic_callback(event: MessageCallback, payload: str):
 
 async def process_difficulty_callback(event: MessageCallback, payload: str):
     """Обработка выбора сложности."""
+    # Подтверждаем получение callback
+    try:
+        await event.answer()
+    except:
+        pass
+    
     difficulty = payload.split(":")[1] if ":" in payload else ""
     user_id = get_user_id_from_event(event)
     chat_id = get_chat_id_from_event(event)
@@ -718,6 +724,12 @@ async def process_difficulty_callback(event: MessageCallback, payload: str):
 
 async def process_count_callback(event: MessageCallback, payload: str):
     """Обработка выбора количества вопросов."""
+    # Подтверждаем получение callback
+    try:
+        await event.answer()
+    except:
+        pass
+    
     count_str = payload.split(":")[1] if ":" in payload else ""
     user_id = get_user_id_from_event(event)
     chat_id = get_chat_id_from_event(event)
