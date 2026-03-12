@@ -1,4 +1,10 @@
 """Очистка всех вопросов из базы данных."""
+import sys
+from pathlib import Path
+
+# Добавляем родительскую директорию в путь
+sys.path.append(str(Path(__file__).parent.parent))
+
 from db import engine
 from sqlalchemy import text
 
