@@ -492,22 +492,28 @@ async def handle_callback(event: MessageCallback):
     payload = event.callback.payload if event.callback else ""
     logger.info(f"Callback received: {payload}")
     
-    # Отвечаем на callback через HTTP-клиент (обязательно в течение 10 сек!)
+    # Отвечаем на callback через HTTP-клиент или встроенный метод
+    # Это ОБЯЗАТЕЛЬНО, иначе MAX будет слать повторные запросы (спам)
+    callback_answered = False
     if http_client and event.callback:
         try:
             response = await http_client.answer_callback_query(
                 callback_id=event.callback.callback_id,
-                text=None,  # или "Принято!" если нужно показать уведомление
+                text=None,
                 show_alert=False
             )
-            if not response.success:
+            if response.success:
+                callback_answered = True
+            else:
                 logger.warning(f"Failed to answer callback: {response.error_message}")
         except Exception as e:
-            logger.error(f"Error answering callback: {e}")
-    elif hasattr(event, 'answer'):
+            logger.error(f"Error answering callback via HTTP: {e}")
+    
+    if not callback_answered and hasattr(event, 'answer'):
         # Fallback на встроенный метод
         try:
             await event.answer()
+            callback_answered = True
         except Exception as e:
             logger.warning(f"Failed to answer callback via event: {e}")
     
@@ -530,6 +536,12 @@ async def handle_callback(event: MessageCallback):
 
 async def process_menu_callback(event: MessageCallback, payload: str):
     """Обработка callback главного меню."""
+    # Подтверждаем получение callback, чтобы остановить спам
+    try:
+        await event.answer()
+    except Exception as e:
+        logger.debug(f"Failed to answer callback: {e}")
+    
     action = payload.split(":")[1] if ":" in payload else ""
     user_id = get_user_id_from_event(event)
     chat_id = get_chat_id_from_event(event)
@@ -618,6 +630,12 @@ async def process_menu_callback(event: MessageCallback, payload: str):
 
 async def process_topic_callback(event: MessageCallback, payload: str):
     """Обработка выбора темы."""
+    # Подтверждаем получение callback, чтобы остановить спам
+    try:
+        await event.answer()
+    except Exception as e:
+        logger.debug(f"Failed to answer callback: {e}")
+    
     topic = payload.split(":")[1] if ":" in payload else ""
     user_id = get_user_id_from_event(event)
     chat_id = get_chat_id_from_event(event)
@@ -876,15 +894,16 @@ async def finish_game(chat_id: int, user_id: int, game_id: int):
 
 async def process_answer_callback(event: MessageCallback, payload: str):
     """Обработка ответа на вопрос."""
+    # Подтверждаем получение callback СРАЗУ, чтобы остановить спам
+    try:
+        await event.answer()
+    except Exception as e:
+        logger.debug(f"Failed to answer callback: {e}")
+    
     parts = payload.split(":") if ":" in payload else []
     
     if len(parts) < 5:
-        if http_client and event.callback:
-            await http_client.answer_callback_query(
-                callback_id=event.callback.callback_id,
-                text="⚠️ Ошибка: недействительный ответ",
-                show_alert=True
-            )
+        # Callback уже подтверждён выше
         return
     
     try:
@@ -899,18 +918,6 @@ async def process_answer_callback(event: MessageCallback, payload: str):
     chat_id = get_chat_id_from_event(event)
     
     is_correct = selected_index == correct_index
-    result_text = "✅ Правильно!" if is_correct else "❌ Неправильно!"
-    
-    # Отвечаем на callback
-    if http_client and event.callback:
-        try:
-            await http_client.answer_callback_query(
-                callback_id=event.callback.callback_id,
-                text=result_text,
-                show_alert=True
-            )
-        except Exception as e:
-            logger.warning(f"Failed to answer callback: {e}")
     
     # Обновляем счет
     state = await get_context(user_id)
@@ -929,6 +936,12 @@ async def process_answer_callback(event: MessageCallback, payload: str):
 
 async def process_game_callback(event: MessageCallback, payload: str):
     """Обработка callback игры (рестарт и т.д.)."""
+    # Подтверждаем получение callback, чтобы остановить спам
+    try:
+        await event.answer()
+    except Exception as e:
+        logger.debug(f"Failed to answer callback: {e}")
+    
     action = payload.split(":")[1] if ":" in payload else ""
     
     if action == "restart":
@@ -937,6 +950,12 @@ async def process_game_callback(event: MessageCallback, payload: str):
 
 async def process_premium_callback(event: MessageCallback, payload: str):
     """Обработка callback Premium."""
+    # Подтверждаем получение callback, чтобы остановить спам
+    try:
+        await event.answer()
+    except Exception as e:
+        logger.debug(f"Failed to answer callback: {e}")
+    
     action = payload.split(":")[1] if ":" in payload else ""
     chat_id = get_chat_id_from_event(event)
     
