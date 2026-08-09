@@ -1,26 +1,40 @@
-"""SQLAlchemy модели для базы данных MAX-Квиз (MVP - одиночный режим)."""
+"""Persistent domain model for the MAX Quiz Battle beta.
+
+The database is the source of truth for every round.  In particular, the
+answer options and the correct option index are stored on ``GameQuestion``;
+callbacks only contain the game id, position and the selected index.
+"""
+
 import enum
-from datetime import datetime
-from typing import Optional, List
+from datetime import date, datetime
+
 from sqlalchemy import (
-    Column, BigInteger, String, Integer, Boolean,
-    DateTime, ForeignKey, Text, Enum, JSON, Float
+    JSON,
+    BigInteger,
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
 )
 from sqlalchemy.orm import declarative_base, relationship
-from sqlalchemy.sql import func
 
 Base = declarative_base()
 
 
 class DifficultyLevel(str, enum.Enum):
-    """Уровни сложности вопросов."""
     EASY = "easy"
     MEDIUM = "medium"
     HARD = "hard"
 
 
 class QuestionCategory(str, enum.Enum):
-    """Категории вопросов."""
     HISTORY = "history"
     SCIENCE = "science"
     ART = "art"
@@ -30,114 +44,216 @@ class QuestionCategory(str, enum.Enum):
     GENERAL = "general"
 
 
+class GameMode(str, enum.Enum):
+    SOLO = "solo"
+    DAILY = "daily"
+    CHALLENGE = "challenge"
+
+
 class GameStatus(str, enum.Enum):
-    """Статусы игры."""
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     ABANDONED = "abandoned"
 
 
+class ChallengeStatus(str, enum.Enum):
+    WAITING = "waiting"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    EXPIRED = "expired"
+
+
 class User(Base):
-    """Модель пользователя."""
     __tablename__ = "users"
 
-    # ИСПРАВЛЕНО: id - primary key без autoincrement для user_id
     id = Column(BigInteger, primary_key=True)
-    username = Column(String(255), nullable=True)
+    username = Column(String(255), nullable=True, index=True)
     first_name = Column(String(255), nullable=True)
     last_name = Column(String(255), nullable=True)
-
-    # Статистика
-    score_total = Column(Integer, default=0)
-    games_played = Column(Integer, default=0)
-    games_won = Column(Integer, default=0)
-
-    # FSM состояние
+    score_total = Column(Integer, nullable=False, default=0, server_default="0")
+    games_played = Column(Integer, nullable=False, default=0, server_default="0")
+    games_won = Column(Integer, nullable=False, default=0, server_default="0")
+    xp = Column(Integer, nullable=False, default=0, server_default="0")
+    level = Column(Integer, nullable=False, default=1, server_default="1")
+    daily_streak = Column(Integer, nullable=False, default=0, server_default="0")
+    best_streak = Column(Integer, nullable=False, default=0, server_default="0")
+    last_daily_date = Column(Date, nullable=True)
+    achievements = Column(JSON, nullable=False, default=list, server_default="[]")
     current_state = Column(String(50), nullable=True)
-    state_data = Column(JSON, default=dict)
+    state_data = Column(JSON, nullable=False, default=dict, server_default="{}")
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
-    # Premium
-    premium_until = Column(DateTime, nullable=True)
-
-    # Streaks
-    daily_streak = Column(Integer, default=0)
-    last_played = Column(DateTime, nullable=True)
-
-    # Метаданные
-    created_at = Column(DateTime, default=func.now())
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
-
-    # Отношения (УПРОЩЕНО: удалены duels)
-    games = relationship("Game", back_populates="user", lazy="dynamic")
+    games = relationship("Game", back_populates="user")
+    daily_results = relationship("DailyResult", back_populates="user")
+    challenge_attempts = relationship("ChallengeAttempt", back_populates="user")
 
 
 class Question(Base):
-    """Модель вопроса."""
     __tablename__ = "questions"
 
-    # ✅ ИСПРАВЛЕНО: Integer вместо BigInteger для SQLite autoincrement
     id = Column(Integer, primary_key=True, autoincrement=True)
     text = Column(Text, nullable=False)
-    category = Column(Enum(QuestionCategory), nullable=False)
-    difficulty = Column(Enum(DifficultyLevel), nullable=False)
-
-    # Ответы
+    category = Column(String(32), nullable=False, index=True)
+    difficulty = Column(String(16), nullable=False, index=True)
     correct_answer = Column(Text, nullable=False)
     wrong_answers = Column(JSON, nullable=False)
     explanation = Column(Text, nullable=True)
-
-    # Метаданные источника
-    source = Column(String(50), nullable=False)
+    source = Column(String(100), nullable=False, default="seed")
     source_id = Column(String(100), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True, server_default="1", index=True)
+    usage_count = Column(Integer, nullable=False, default=0, server_default="0")
+    correct_rate = Column(Float, nullable=False, default=0.0, server_default="0")
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
 
-    # Статистика использования
-    is_active = Column(Boolean, default=True)
-    usage_count = Column(Integer, default=0)
-    correct_rate = Column(Float, default=0.0)
-
-    created_at = Column(DateTime, default=func.now())
+    game_questions = relationship("GameQuestion", back_populates="question")
 
 
 class Game(Base):
-    """Модель игровой сессии (одиночный режим)."""
     __tablename__ = "games"
 
-    # ИСПРАВЛЕНО: Integer + autoincrement=True для SQLite совместимости
-    # Важно: используем Integer вместо BigInteger для корректного autoincrement в SQLite
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
-
-    # Настройки игры
-    category = Column(Enum(QuestionCategory), nullable=False)
-    difficulty = Column(Enum(DifficultyLevel), nullable=False)
-    question_count = Column(Integer, default=10)
-
-    # Состояние игры
-    status = Column(Enum(GameStatus), default=GameStatus.IN_PROGRESS)
-    current_question_index = Column(Integer, default=0)
-    score = Column(Integer, default=0)
-    correct_answers = Column(Integer, default=0)
-    lives_remaining = Column(Integer, default=3)
-
-    # Временные метки
-    started_at = Column(DateTime, default=func.now())
+    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    mode = Column(String(16), nullable=False, default=GameMode.SOLO.value, index=True)
+    category = Column(String(32), nullable=False, default=QuestionCategory.GENERAL.value)
+    difficulty = Column(String(16), nullable=False, default=DifficultyLevel.MEDIUM.value)
+    question_count = Column(Integer, nullable=False, default=5)
+    status = Column(String(16), nullable=False, default=GameStatus.IN_PROGRESS.value, index=True)
+    current_question_index = Column(Integer, nullable=False, default=0)
+    score = Column(Integer, nullable=False, default=0)
+    correct_answers = Column(Integer, nullable=False, default=0)
+    answered_questions = Column(Integer, nullable=False, default=0)
+    lives_remaining = Column(Integer, nullable=False, default=3)
+    daily_date = Column(Date, nullable=True, index=True)
+    challenge_id = Column(Integer, ForeignKey("friend_challenges.id"), nullable=True, index=True)
+    progress_awarded = Column(Boolean, nullable=False, default=False, server_default="0")
+    finished_reason = Column(String(32), nullable=True)
+    started_at = Column(DateTime, nullable=False, server_default=func.now())
     completed_at = Column(DateTime, nullable=True)
 
-    # Отношения (УПРОЩЕНО: удалены questions через GameQuestion)
     user = relationship("User", back_populates="games")
+    questions = relationship("GameQuestion", back_populates="game", cascade="all, delete-orphan", order_by="GameQuestion.position")
+    challenge = relationship("FriendChallenge", back_populates="games", foreign_keys=[challenge_id])
+
+
+class GameQuestion(Base):
+    __tablename__ = "game_questions"
+    __table_args__ = (UniqueConstraint("game_id", "position", name="uq_game_question_position"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    game_id = Column(Integer, ForeignKey("games.id", ondelete="CASCADE"), nullable=False, index=True)
+    question_id = Column(Integer, ForeignKey("questions.id"), nullable=False)
+    position = Column(Integer, nullable=False)
+    answer_options = Column(JSON, nullable=False)
+    correct_index = Column(Integer, nullable=False)
+    was_answered = Column(Boolean, nullable=False, default=False, server_default="0")
+    selected_index = Column(Integer, nullable=True)
+    is_correct = Column(Boolean, nullable=True)
+    answer_time = Column(Float, nullable=True)
+    points_earned = Column(Integer, nullable=False, default=0, server_default="0")
+    sent_at = Column(DateTime, nullable=True)
+    answered_at = Column(DateTime, nullable=True)
+
+    game = relationship("Game", back_populates="questions")
+    question = relationship("Question", back_populates="game_questions")
+
+
+class DailyChallenge(Base):
+    __tablename__ = "daily_challenges"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    challenge_date = Column(Date, nullable=False, unique=True, index=True)
+    question_count = Column(Integer, nullable=False, default=5)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+    questions = relationship("DailyQuestion", back_populates="daily", cascade="all, delete-orphan", order_by="DailyQuestion.position")
+    results = relationship("DailyResult", back_populates="daily", cascade="all, delete-orphan")
+
+
+class DailyQuestion(Base):
+    __tablename__ = "daily_questions"
+    __table_args__ = (UniqueConstraint("daily_id", "position", name="uq_daily_question_position"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    daily_id = Column(Integer, ForeignKey("daily_challenges.id", ondelete="CASCADE"), nullable=False, index=True)
+    question_id = Column(Integer, ForeignKey("questions.id"), nullable=False)
+    position = Column(Integer, nullable=False)
+
+    daily = relationship("DailyChallenge", back_populates="questions")
+    question = relationship("Question")
+
+
+class DailyResult(Base):
+    __tablename__ = "daily_results"
+    __table_args__ = (UniqueConstraint("daily_id", "user_id", name="uq_daily_result_user"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    daily_id = Column(Integer, ForeignKey("daily_challenges.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    game_id = Column(Integer, ForeignKey("games.id"), nullable=False)
+    score = Column(Integer, nullable=False, default=0)
+    correct_answers = Column(Integer, nullable=False, default=0)
+    completed_at = Column(DateTime, nullable=False, server_default=func.now())
+
+    daily = relationship("DailyChallenge", back_populates="results")
+    user = relationship("User", back_populates="daily_results")
+
+
+class FriendChallenge(Base):
+    __tablename__ = "friend_challenges"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(32), nullable=False, unique=True, index=True)
+    creator_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    opponent_id = Column(BigInteger, ForeignKey("users.id"), nullable=True, index=True)
+    category = Column(String(32), nullable=False, default=QuestionCategory.GENERAL.value)
+    difficulty = Column(String(16), nullable=False, default=DifficultyLevel.MEDIUM.value)
+    question_count = Column(Integer, nullable=False, default=5)
+    status = Column(String(16), nullable=False, default=ChallengeStatus.WAITING.value, index=True)
+    rematch_of = Column(Integer, ForeignKey("friend_challenges.id"), nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+
+    games = relationship("Game", back_populates="challenge", foreign_keys="Game.challenge_id")
+    questions = relationship("ChallengeQuestion", back_populates="challenge", cascade="all, delete-orphan", order_by="ChallengeQuestion.position")
+    attempts = relationship("ChallengeAttempt", back_populates="challenge", cascade="all, delete-orphan")
+
+
+class ChallengeQuestion(Base):
+    __tablename__ = "challenge_questions"
+    __table_args__ = (UniqueConstraint("challenge_id", "position", name="uq_challenge_question_position"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    challenge_id = Column(Integer, ForeignKey("friend_challenges.id", ondelete="CASCADE"), nullable=False, index=True)
+    question_id = Column(Integer, ForeignKey("questions.id"), nullable=False)
+    position = Column(Integer, nullable=False)
+
+    challenge = relationship("FriendChallenge", back_populates="questions")
+    question = relationship("Question")
+
+
+class ChallengeAttempt(Base):
+    __tablename__ = "challenge_attempts"
+    __table_args__ = (UniqueConstraint("challenge_id", "user_id", name="uq_challenge_attempt_user"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    challenge_id = Column(Integer, ForeignKey("friend_challenges.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    game_id = Column(Integer, ForeignKey("games.id"), nullable=False)
+    score = Column(Integer, nullable=False, default=0)
+    correct_answers = Column(Integer, nullable=False, default=0)
+    completed_at = Column(DateTime, nullable=True)
+
+    challenge = relationship("FriendChallenge", back_populates="attempts")
+    user = relationship("User", back_populates="challenge_attempts")
 
 
 class AnalyticsEvent(Base):
-    """Модель для аналитических событий."""
     __tablename__ = "analytics_events"
 
-    # ИСПРАВЛЕНО: autoincrement=True для SQLite совместимости
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=True)
-    event_type = Column(String(100), nullable=False)
-    event_data = Column(JSON, default=dict)
-    created_at = Column(DateTime, default=func.now())
-
-
-# УДАЛЕНО: Duel, Payment, DailyStreak - для MVP не нужны
-# УДАЛЕНО: GameQuestion - связующая таблица для дуэлей, не нужна для одиночного режима
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=True, index=True)
+    event_type = Column(String(100), nullable=False, index=True)
+    event_data = Column(JSON, nullable=False, default=dict, server_default="{}")
+    created_at = Column(DateTime, nullable=False, server_default=func.now(), index=True)

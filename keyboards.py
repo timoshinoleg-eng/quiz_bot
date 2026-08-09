@@ -95,17 +95,18 @@ class InlineKeyboardAttachment(Attachment):
 # === ФАБРИЧНЫЕ ФУНКЦИИ ДЛЯ БОТА ===
 
 def get_main_menu_keyboard(is_premium: bool = False) -> InlineKeyboardAttachment:
-    """Главное меню бота."""
+    """Safe fallback main menu matching the HTTP keyboard."""
     rows = [
-        InlineKeyboardRow.single(
-            InlineKeyboardButton.callback("🎮 Начать игру", "menu:play")
+        InlineKeyboardRow.pair(
+            InlineKeyboardButton.callback("🎯 Сегодня", "menu:daily"),
+            InlineKeyboardButton.callback("⚔️ Вызвать друга", "menu:challenge")
         ),
         InlineKeyboardRow.pair(
-            InlineKeyboardButton.callback("📊 Статистика", "menu:stats"),
-            InlineKeyboardButton.callback("⭐ Premium", "menu:premium")
+            InlineKeyboardButton.callback("🎮 Играть", "menu:play"),
+            InlineKeyboardButton.callback("🏆 Рейтинг", "menu:leaderboard")
         ),
         InlineKeyboardRow.single(
-            InlineKeyboardButton.callback("❓ Помощь", "menu:help")
+            InlineKeyboardButton.callback("👤 Профиль", "menu:profile")
         ),
     ]
     return InlineKeyboardAttachment.from_rows(*rows)
@@ -164,11 +165,11 @@ def get_question_count_keyboard() -> InlineKeyboardAttachment:
     )
 
 
-def get_answers_keyboard(answers: List[str], current_index: int, game_id: int, correct_index: int) -> InlineKeyboardAttachment:
-    """Клавиатура с вариантами ответов."""
+def get_answers_keyboard(answers: List[str], current_index: int, game_id: int, correct_index: int = None) -> InlineKeyboardAttachment:
+    """Fallback answer keyboard without leaking correctness."""
     buttons = []
     for idx, answer in enumerate(answers[:4]):
-        payload = f"answer:{game_id}:{current_index}:{idx}:{correct_index}"
+        payload = f"answer:{game_id}:{current_index}:{idx}"
         display_text = f"{idx + 1}. {answer[:50]}"
         buttons.append(InlineKeyboardButton.callback(display_text, payload))
     

@@ -10,7 +10,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-MAX_API_BASE = "https://platform-api.max.ru"
+MAX_API_BASE = "https://platform-api2.max.ru"
 MAX_API_VERSION = None  # API doesn't use version prefix
 
 
@@ -84,7 +84,10 @@ class MaxHttpClient:
                     params=params,
                     json=json_payload
                 ) as response:
-                    response_data = await response.json()
+                    try:
+                        response_data = await response.json()
+                    except (aiohttp.ContentTypeError, ValueError):
+                        response_data = {"raw": await response.text()}
                     
                     if response.status < 400:
                         return HttpClientResponse(
@@ -95,7 +98,7 @@ class MaxHttpClient:
                         )
                     
                     # Логирование ошибки
-                    error_msg = response_data.get('message', 'Unknown error')
+                    error_msg = response_data.get('message', 'Unknown error') if isinstance(response_data, dict) else 'Unknown error'
                     logger.warning(
                         f"MAX API error: {response.status} — {error_msg} "
                         f"(attempt {attempt + 1}/{self.max_retries})"
@@ -161,15 +164,13 @@ class MaxHttpClient:
         # ✅ ИСПРАВЛЕНО: endpoint без chat_id, chat_id в теле запроса
         endpoint = "messages"
         
-        # Тело запроса с chat_id
         json_payload = {
-            "chat_id": chat_id,
             "text": text,
-            "disable_notification": disable_notification
+            "notify": not disable_notification,
         }
         
         if reply_to_message_id:
-            json_payload["reply_to_message_id"] = reply_to_message_id
+            json_payload["link"] = {"type": "reply", "message_id": reply_to_message_id}
         
         if buttons:
             # Валидация структуры кнопок
@@ -188,8 +189,9 @@ class MaxHttpClient:
         
         return await self._request_with_retry(
             method="POST",
-            endpoint=endpoint,  # ← просто "messages"
-            json_payload=json_payload  # ← chat_id в теле
+            endpoint=endpoint,
+            params={"chat_id": chat_id},
+            json_payload=json_payload
         )
     
     async def answer_callback_query(
@@ -214,12 +216,7 @@ class MaxHttpClient:
         # ✅ ИСПРАВЛЕНО: callback_id передается как query параметр (требование API!)
         params = {"callback_id": callback_id}
         
-        # ✅ ИСПРАВЛЕНО: ВСЕГДА отправляем notification (требование API!)
-        # API требует поле notification или message, иначе ошибка 400
-        json_payload = {
-            "notification": text or "",  # ← Пустая строка если text=None
-            "show_alert": show_alert
-        }
+        json_payload = {"message": {"text": text}} if text else {}
         
         return await self._request_with_retry(
             method="POST",

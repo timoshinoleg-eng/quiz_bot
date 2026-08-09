@@ -31,7 +31,6 @@ class State(str, Enum):
         IN_GAME: В процессе игры
         ANSWERING: Ответ на вопрос
         GAME_OVER: Игра завершена
-        PREMIUM_CHECKOUT: Оформление Premium
     """
     IDLE = "idle"
     SELECT_TOPIC = "select_topic"
@@ -40,8 +39,6 @@ class State(str, Enum):
     IN_GAME = "in_game"
     ANSWERING = "answering"
     GAME_OVER = "game_over"
-    PREMIUM_CHECKOUT = "premium_checkout"
-    # УДАЛЕНО: DUEL_WAITING, DUEL_IN_PROGRESS - не нужны для MVP
 
 
 @dataclass

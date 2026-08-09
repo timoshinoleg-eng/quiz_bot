@@ -1,173 +1,41 @@
-# Production Deployment Checklist 🚀
+# Quiz Battle MAX — closed beta checklist
 
-## Преддеплойная проверка
+## Before a real two-user test
 
-### Безопасность
-- [ ] Изменён стандартный пароль PostgreSQL
-- [ ] Настроен Redis с паролем
-- [ ] BOT_TOKEN хранится в безопасном месте
-- [ ] YOOKASSA_SECRET_KEY не попадает в логи
-- [ ] Настроен firewall (только необходимые порты)
-- [ ] Отключен root доступ по SSH
-- [ ] Настроен fail2ban
+- [ ] Create a MAX bot and put its token only in `.env` as `BOT_TOKEN`.
+- [ ] Set `BOT_USERNAME` if deep-link invitations are desired.
+- [ ] Use `DEBUG=false` and a private PostgreSQL URL for hosted beta.
+- [ ] Run `alembic upgrade head`.
+- [ ] Run `python scripts/load_questions.py --file content/beta_seed.json`.
+- [ ] Confirm the question count is at least five for every category used.
+- [ ] Keep the bot token out of logs, commits and screenshots.
 
-### Конфигурация
-- [ ] ENV=production
-- [ ] DEBUG=false
-- [ ] Настроен WEBHOOK_URL (рекомендуется вместо polling)
-- [ ] Проверен DATABASE_URL
-- [ ] Проверены Redis настройки
-- [ ] Настроены лимиты rate limiting
+## Local smoke
 
-### База данных
-- [ ] Создана база данных PostgreSQL
-- [ ] Применены все миграции (`alembic upgrade head`)
-- [ ] Созданы индексы
-- [ ] Настроены бэкапы
-- [ ] Проверено подключение
-
-### Контент
-- [ ] Загружены вопросы из RuBQ (минимум 500)
-- [ ] Загружены вопросы из OpenTriviaDB
-- [ ] Проверена валидация вопросов
-- [ ] Проверены категории
-
-### Тестирование
-- [ ] Пройдены все unit тесты (`pytest`)
-- [ ] Проверена интеграция с БД
-- [ ] Проверена интеграция с Redis
-- [ ] Протестированы платежи (тестовый режим)
-- [ ] Проверена генерация карточек
-
-## Деплой
-
-### Docker
-```bash
-# 1. Сборка образа
-docker-compose build
-
-# 2. Запуск баз данных
-docker-compose up -d postgres redis
-
-# 3. Применение миграций
-docker-compose run --rm bot alembic upgrade head
-
-# 4. Загрузка вопросов
-docker-compose run --rm bot python scripts/load_questions.py
-
-# 5. Запуск бота
-docker-compose up -d bot
-
-# 6. Проверка статуса
-docker-compose ps
-docker-compose logs -f bot
-```
-
-### Ручной деплой
-```bash
-# 1. Установка зависимостей
-pip install -r requirements.txt
-
-# 2. Применение миграций
-alembic upgrade head
-
-# 3. Запуск бота
+```powershell
+python -m compileall -q .
+pytest -q
 python bot.py
 ```
 
-## Постдеплойная проверка
+1. `/start` shows Daily, challenge, quick game, ranking and profile.
+2. Daily reaches five questions and stores the result.
+3. A second Daily click does not create a second ranked attempt.
+4. `/challenge` gives a code; `/join CODE` starts the same question set for user B.
+5. Duplicate callback does not change score or XP.
+6. Restarting the process does not lose Daily or Challenge state.
 
-### Функциональность
-- [ ] Команда /start работает
-- [ ] Команда /help работает
-- [ ] Можно начать игру
-- [ ] Работают клавиатуры
-- [ ] Считаются очки
-- [ ] Работает система жизней
-- [ ] Daily streak работает
-- [ ] Статистика отображается
+## Docker beta
 
-### Дуэли
-- [ ] Можно создать дуэль
-- [ ] Можно присоединиться к дуэли
-- [ ] Real-time синхронизация работает
-- [ ] Подсчёт очков в дуэли корректен
-
-### Premium
-- [ ] Команда /premium работает
-- [ ] Создание платежа работает
-- [ ] Webhook от YooKassa обрабатывается
-- [ ] Premium активируется после оплаты
-- [ ] Реклама не показывается Premium пользователям
-
-### Производительность
-- [ ] Response time < 500ms (95-й перцентиль)
-- [ ] БД выдерживает нагрузку
-- [ ] Redis работает стабильно
-- [ ] Нет утечек памяти
-
-## Мониторинг
-
-### Метрики
-- [ ] DAU/MAU отслеживаются
-- [ ] Retention D1/D7/D30 отслеживаются
-- [ ] Completion rate отслеживается
-- [ ] ARPU отслеживается
-- [ ] Ошибки логируются
-
-### Алерты
-- [ ] Настроены алерты на ошибки
-- [ ] Настроены алерты на недоступность
-- [ ] Настроены алерты на высокую нагрузку
-
-## Бэкапы
-
-### Автоматические бэкапы
-```bash
-# Добавить в crontab
-docker exec quiz_postgres pg_dump -U quiz_user quiz_db > /backups/quiz_$(date +%Y%m%d_%H%M%S).sql
+```powershell
+docker compose build
+docker compose up -d postgres
+docker compose run --rm bot alembic upgrade head
+docker compose run --rm bot python scripts/load_questions.py --file content/beta_seed.json
+docker compose up -d bot
+docker compose logs -f bot
 ```
 
-### Проверка восстановления
-- [ ] Тестовое восстановление из бэкапа
-- [ ] Проверка целостности данных
+## Explicitly out of scope
 
-## Масштабирование
-
-### При росте нагрузки
-- [ ] Настроен connection pooling (PgBouncer)
-- [ ] Рассмотрено использование Redis Cluster
-- [ ] План миграции на более мощный сервер
-
-## Откат
-
-### План отката
-```bash
-# 1. Остановка новой версии
-docker-compose down
-
-# 2. Откат миграций (если нужно)
-docker-compose run --rm bot alembic downgrade -1
-
-# 3. Запуск предыдущей версии
-git checkout <previous-tag>
-docker-compose up -d
-```
-
-## Чеклист готовности
-
-- [ ] Все пункты выше выполнены
-- [ ] Документация обновлена
-- [ ] Команда оповещена
-- [ ] План поддержки готов
-- [ ] Служба поддержки информирована
-
----
-
-**Дата деплоя:** _______________
-
-**Версия:** _______________
-
-**Ответственный:** _______________
-
-**Подпись:** _______________
+Payments, Premium, ads, Redis realtime, tournaments, Mini App, automatic push campaigns and production webhook ingress require separate acceptance work.

@@ -9,8 +9,7 @@ CATEGORY_EMOJIS = {
     'GEOGRAPHY': '🌍',
     'ART': '🎨',
     'SPORT': '⚽',
-    'TECHNOLOGY': '💻',
-    'NATURE': '🌿',
+    'ENTERTAINMENT': '🎬',
     'GENERAL': '❓'
 }
 
@@ -82,14 +81,18 @@ def get_answers_keyboard_http(
     answers: List[str], 
     current_index: int, 
     game_id: int, 
-    correct_index: int,
+    correct_index: int = None,
     total_questions: int = 10
 ) -> List[List[Dict[str, str]]]:
-    """Улучшенная клавиатура с вариантами ответов (с эмодзи и прогрессом)."""
+    """Answer keyboard.
+
+    ``correct_index`` remains an ignored compatibility argument.  It must
+    never be serialized into a callback: correctness is decided in the DB.
+    """
     buttons = []
     
     for idx, answer in enumerate(answers[:4]):
-        payload = f"answer:{game_id}:{current_index}:{idx}:{correct_index}"
+        payload = f"answer:{game_id}:{current_index}:{idx}"
         emoji = ANSWER_EMOJIS[idx] if idx < len(ANSWER_EMOJIS) else '⚪'
         # Обрезаем ответ до 55 символов (оставляем место для эмодзи и буквы)
         display_text = f"{emoji} {chr(65 + idx)}. {answer[:50]}"
@@ -170,23 +173,30 @@ def get_premium_keyboard_http() -> List[List[Dict[str, str]]]:
 # === Фабричные функции для викторины ===
 
 def get_main_menu_keyboard_http(is_premium: bool = False) -> List[List[Dict[str, str]]]:
-    """Улучшенное главное меню."""
+    """Beta main menu; monetization is intentionally absent."""
     rows = [
         KeyboardFactory.row(
-            KeyboardFactory.callback_button("🎮 Играть", "menu:play")
+            KeyboardFactory.callback_button("🎯 Сегодня", "menu:daily"),
+            KeyboardFactory.callback_button("⚔️ Вызвать друга", "menu:challenge")
         ),
         KeyboardFactory.row(
-            KeyboardFactory.callback_button("📊 Статистика", "menu:stats"),
-            KeyboardFactory.callback_button("⚙️ Настройки", "menu:settings")
+            KeyboardFactory.callback_button("🎮 Играть", "menu:play"),
+            KeyboardFactory.callback_button("🏆 Рейтинг", "menu:leaderboard")
+        ),
+        KeyboardFactory.row(
+            KeyboardFactory.callback_button("👤 Профиль", "menu:profile"),
+            KeyboardFactory.callback_button("❓ Помощь", "menu:help")
         ),
     ]
     
-    if is_premium:
-        rows.insert(0, KeyboardFactory.row(
-            KeyboardFactory.callback_button("⭐ Премиум-режим", "menu:premium")
-        ))
-    
     return KeyboardFactory.keyboard(*rows)
+
+
+def get_challenge_keyboard_http(challenge_id: int) -> List[List[Dict[str, str]]]:
+    return KeyboardFactory.keyboard(
+        KeyboardFactory.row(KeyboardFactory.callback_button("🔥 Реванш", f"challenge:rematch:{challenge_id}")),
+        KeyboardFactory.row(KeyboardFactory.callback_button("🏠 В меню", "menu:back")),
+    )
 
 
 def get_quiz_keyboard_http(
@@ -281,12 +291,9 @@ def get_topics_keyboard_http() -> List[List[Dict[str, str]]]:
         ),
         KeyboardFactory.row(
             KeyboardFactory.callback_button(f"{CATEGORY_EMOJIS['ART']} Искусство", "topic:art"),
-            KeyboardFactory.callback_button(f"{CATEGORY_EMOJIS['TECHNOLOGY']} Технологии", "topic:technology")
+            KeyboardFactory.callback_button(f"{CATEGORY_EMOJIS['ENTERTAINMENT']} Развлечения", "topic:entertainment")
         ),
-        KeyboardFactory.row(
-            KeyboardFactory.callback_button(f"{CATEGORY_EMOJIS['NATURE']} Природа", "topic:nature"),
-            KeyboardFactory.callback_button(f"{CATEGORY_EMOJIS['GENERAL']} Общие", "topic:general")
-        ),
+        KeyboardFactory.row(KeyboardFactory.callback_button(f"{CATEGORY_EMOJIS['GENERAL']} Общие", "topic:general")),
         KeyboardFactory.row(
             KeyboardFactory.callback_button("⬅️ Назад", "topic:back")
         ),

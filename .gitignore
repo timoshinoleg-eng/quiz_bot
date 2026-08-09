@@ -35,9 +35,11 @@ data/*.csv
 *.sqlite
 *.sqlite3
 quiz_bot.db
+quiz_bot.db
 
 # Логи
 *.log
+bot.log
 logs/
 
 # Тесты
