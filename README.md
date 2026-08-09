@@ -32,6 +32,12 @@ python bot.py
 
 Для локального режима используется `sqlite+aiosqlite:///./quiz_bot.db`. Для hosted beta задайте `DATABASE_URL` на PostgreSQL и выполните миграции.
 
+## Диагностика MAX-кнопок
+
+При запуске бот пишет подробную трассировку входящих callback-событий, payload кнопок,
+доставки клавиатур и ответов MAX API в `logs/quiz_bot.log`. Секреты в лог не записываются.
+Для расширенного уровня можно задать `LOG_LEVEL=DEBUG` в `.env`.
+
 ## Команды
 
 `/start` — меню; `/daily` — вопрос дня; `/play` — быстрая игра; `/challenge` — создать вызов; `/join CODE` — принять вызов; `/stats` — профиль; `/leaderboard` — рейтинг.

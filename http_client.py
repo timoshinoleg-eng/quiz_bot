@@ -77,6 +77,15 @@ class MaxHttpClient:
         
         for attempt in range(self.max_retries):
             try:
+                logger.info(
+                    "max_request_start method=%s endpoint=%s params=%s attempt=%s/%s payload_keys=%s",
+                    method,
+                    endpoint,
+                    sorted((params or {}).keys()),
+                    attempt + 1,
+                    self.max_retries,
+                    sorted((json_payload or {}).keys()),
+                )
                 session = await self._get_session()
                 async with session.request(
                     method=method,
@@ -90,6 +99,12 @@ class MaxHttpClient:
                         response_data = {"raw": await response.text()}
                     
                     if response.status < 400:
+                        logger.info(
+                            "max_request_result method=%s endpoint=%s status=%s success=true",
+                            method,
+                            endpoint,
+                            response.status,
+                        )
                         return HttpClientResponse(
                             success=True,
                             status_code=response.status,
@@ -100,8 +115,13 @@ class MaxHttpClient:
                     # Логирование ошибки
                     error_msg = response_data.get('message', 'Unknown error') if isinstance(response_data, dict) else 'Unknown error'
                     logger.warning(
-                        f"MAX API error: {response.status} — {error_msg} "
-                        f"(attempt {attempt + 1}/{self.max_retries})"
+                        "max_request_result method=%s endpoint=%s status=%s success=false error=%s attempt=%s/%s",
+                        method,
+                        endpoint,
+                        response.status,
+                        error_msg,
+                        attempt + 1,
+                        self.max_retries,
                     )
                     
                     # Retry logic
@@ -119,7 +139,13 @@ class MaxHttpClient:
                     )
                     
             except aiohttp.ClientError as e:
-                logger.error(f"Network error: {type(e).__name__}: {e}")
+                logger.error(
+                    "max_request_network_error method=%s endpoint=%s error_type=%s error=%s",
+                    method,
+                    endpoint,
+                    type(e).__name__,
+                    e,
+                )
                 if attempt < self.max_retries - 1:
                     await asyncio.sleep(2 ** attempt)
                     continue
@@ -216,7 +242,10 @@ class MaxHttpClient:
         # ✅ ИСПРАВЛЕНО: callback_id передается как query параметр (требование API!)
         params = {"callback_id": callback_id}
         
-        json_payload = {"message": {"text": text}} if text else {}
+        # MAX rejects an empty callback body. A zero-width notification is a
+        # valid acknowledgement without changing the source message or showing
+        # an intrusive toast to the player.
+        json_payload = {"notification": text if text is not None else "\u200b"}
         
         return await self._request_with_retry(
             method="POST",

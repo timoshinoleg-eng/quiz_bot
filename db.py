@@ -117,8 +117,10 @@ def _normalise_options(question: Question) -> tuple[list[str], int]:
 
 
 class DailyAlreadyPlayed(Exception):
-    def __init__(self, game: Game):
-        self.game = game
+    """Raised with a stable identifier when a completed Daily is reopened."""
+
+    def __init__(self, game_id: int):
+        self.game_id = game_id
         super().__init__("Daily challenge already completed")
 
 
@@ -196,6 +198,26 @@ class DatabaseManager:
         if len(questions) < count:
             raise ValueError(f"Not enough questions for {category_value}/{difficulty_value}: {len(questions)} < {count}")
         return questions
+
+    async def available_question_count(self, category: Any, difficulty: Any) -> int:
+        """Return the number of questions selectable by the current pool policy."""
+        category_value = value_of(category)
+        difficulty_value = value_of(difficulty)
+        async with get_db() as db:
+            exact_count = await db.scalar(
+                select(func.count(Question.id))
+                .where(Question.is_active.is_(True))
+                .where(Question.category == category_value)
+                .where(Question.difficulty == difficulty_value)
+            )
+            if category_value == QuestionCategory.GENERAL.value:
+                return int(exact_count or 0)
+            fallback_count = await db.scalar(
+                select(func.count(Question.id))
+                .where(Question.is_active.is_(True))
+                .where(Question.category == QuestionCategory.GENERAL.value)
+            )
+            return int(exact_count or 0) + int(fallback_count or 0)
 
     async def _new_game(self, db: AsyncSession, user_id: int, category: Any, difficulty: Any,
                         question_count: int, mode: Any = GameMode.SOLO, daily_date: Optional[date] = None,
@@ -423,8 +445,7 @@ class DatabaseManager:
                 DailyResult.user_id == user_id,
             ))
             if existing_result:
-                existing_game = await db.get(Game, existing_result.game_id)
-                raise DailyAlreadyPlayed(existing_game)
+                raise DailyAlreadyPlayed(existing_result.game_id)
             in_progress = await db.scalar(select(Game).where(
                 Game.user_id == user_id,
                 Game.mode == GameMode.DAILY.value,

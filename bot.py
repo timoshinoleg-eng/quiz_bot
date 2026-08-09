@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from logging.handlers import RotatingFileHandler
 import os
+from pathlib import Path
 import sys
 from typing import Any, Optional
 from urllib.parse import quote
@@ -16,7 +18,33 @@ from urllib.parse import quote
 from dotenv import load_dotenv
 
 load_dotenv()
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+
+def configure_logging() -> None:
+    """Configure console and rotating file logs for live MAX diagnostics."""
+    log_dir = Path(__file__).resolve().parent / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    formatter = logging.Formatter(
+        "%(asctime)s %(levelname)s %(name)s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    file_handler = RotatingFileHandler(
+        log_dir / "quiz_bot.log",
+        maxBytes=5 * 1024 * 1024,
+        backupCount=3,
+        encoding="utf-8",
+    )
+    file_handler.setFormatter(formatter)
+    console_handler = logging.StreamHandler(sys.stderr)
+    console_handler.setFormatter(formatter)
+    logging.basicConfig(
+        level=os.getenv("LOG_LEVEL", "INFO").upper(),
+        handlers=[file_handler, console_handler],
+        force=True,
+    )
+
+
+configure_logging()
 logger = logging.getLogger("quiz_bot")
 
 try:
@@ -99,6 +127,12 @@ bot = Bot(token=settings.BOT.token) if settings.BOT.token else NoTokenBot()
 dp = Dispatcher()
 http_client = MaxHttpClient(settings.BOT.token) if MaxHttpClient and settings.BOT.token else None
 keyboard_adapter = KeyboardAdapter(bot=bot, http_client=http_client, prefer_http=bool(http_client))
+logger.info(
+    "runtime_initialized maxapi_available=%s http_client=%s bot_username=%s",
+    MAXAPI_AVAILABLE,
+    bool(http_client),
+    settings.BOT.username or "unset",
+)
 
 
 def _get_nested(event: Any, *paths: tuple[str, ...]) -> Any:
@@ -148,9 +182,18 @@ def event_text(event: Any) -> str:
 async def acknowledge(event: Any) -> None:
     callback_id = _get_nested(event, ("callback", "callback_id"))
     if callback_id and http_client:
-        result = await http_client.answer_callback_query(str(callback_id))
-        if result.success:
-            return
+        try:
+            result = await http_client.answer_callback_query(str(callback_id))
+            logger.info(
+                "callback_ack success=%s status=%s error=%s",
+                result.success,
+                result.status_code,
+                result.error_message or "-",
+            )
+            if result.success:
+                return
+        except Exception:
+            logger.warning("callback_ack request failed", exc_info=True)
     answer = getattr(event, "answer", None)
     if answer:
         try:
@@ -160,10 +203,25 @@ async def acknowledge(event: Any) -> None:
 
 
 async def send_text(chat_id: int, text: str, buttons=None) -> None:
+    payloads = [
+        str(button.get("payload", ""))
+        for row in (buttons or [])
+        for button in row
+        if isinstance(button, dict)
+    ]
+    logger.info(
+        "outbound_message chat_id=%s text_preview=%r button_count=%s payloads=%s",
+        chat_id,
+        text.replace("\n", " ")[:100],
+        len(payloads),
+        payloads,
+    )
     if buttons:
         sent = await keyboard_adapter.send_with_keyboard(chat_id=chat_id, text=text, buttons=buttons)
+        logger.info("keyboard_delivery chat_id=%s success=%s", chat_id, sent)
         if sent:
             return
+        logger.warning("keyboard_delivery_failed chat_id=%s fallback=plain_message", chat_id)
     await bot.send_message(chat_id=chat_id, text=text)
 
 
@@ -175,8 +233,16 @@ async def send_question(chat_id: int, game_id: int) -> None:
     game = await db_manager.get_game(game_id)
     question = await db_manager.get_current_question(game_id)
     if not game or not question:
+        logger.warning("question_unavailable chat_id=%s game_id=%s", chat_id, game_id)
         await send_menu(chat_id, "Игра уже завершена. Выбери следующий режим:")
         return
+    logger.info(
+        "question_sent chat_id=%s game_id=%s position=%s total=%s",
+        chat_id,
+        game_id,
+        question.position,
+        game.question_count,
+    )
     text = (
         f"❓ Вопрос {question.position + 1}/{game.question_count}\n\n"
         f"{question.question.text}\n\n"
@@ -232,7 +298,12 @@ async def start_daily(chat_id: int, user_id: int) -> None:
     try:
         game = await db_manager.create_daily_game(user_id)
     except DailyAlreadyPlayed as exc:
-        await finish_message(chat_id, exc.game)
+        game = await db_manager.get_game(exc.game_id)
+        if game is None:
+            logger.error("daily_completed_game_missing game_id=%s user_id=%s", exc.game_id, user_id)
+            await send_text(chat_id, "Сегодняшний результат не найден. Нажми /start")
+            return
+        await finish_message(chat_id, game)
         return
     state = await get_context(user_id)
     await state.update_data(game_id=game.id, mode=GameMode.DAILY.value)
@@ -363,10 +434,24 @@ async def show_leaderboard(chat_id: int) -> None:
 
 @dp.message_callback()
 async def handle_callback(event: MessageCallback):
-    await acknowledge(event)
     payload = callback_payload(event)
-    user_id = get_user_id_from_event(event)
-    chat_id = get_chat_id_from_event(event)
+    try:
+        user_id = get_user_id_from_event(event)
+        chat_id = get_chat_id_from_event(event)
+    except Exception:
+        logger.exception(
+            "callback_context_failed event_type=%s payload=%s",
+            type(event).__name__,
+            payload,
+        )
+        raise
+    logger.info(
+        "callback_received payload=%s user_id=%s chat_id=%s",
+        payload,
+        user_id,
+        chat_id,
+    )
+    await acknowledge(event)
     try:
         if payload == "menu:daily":
             await start_daily(chat_id, user_id)
@@ -398,6 +483,12 @@ async def handle_callback(event: MessageCallback):
                 await invite_challenge(chat_id, user_id, old.category, old.difficulty)
         else:
             await send_text(chat_id, "Эта кнопка устарела. Нажми /start")
+        logger.info(
+            "callback_handled payload=%s user_id=%s chat_id=%s",
+            payload,
+            user_id,
+            chat_id,
+        )
     except Exception:
         logger.exception("Unhandled callback payload=%s", payload)
         await send_text(chat_id, "Что-то пошло не так. Попробуй ещё раз.", get_main_menu_keyboard_http())
@@ -420,18 +511,42 @@ async def select_difficulty(user_id: int, chat_id: int, difficulty: str) -> None
     state = await get_context(user_id)
     await state.update_data(selected_difficulty=difficulty)
     await state.set_state(State.SELECT_QUESTION_COUNT)
-    await send_text(chat_id, "⚙️ Выбери длину раунда:", get_question_count_keyboard_http())
+    data = await state.get_data()
+    available_count = await db_manager.available_question_count(data.get("selected_topic", "general"), difficulty)
+    available_counts = [count for count in settings.GAME.question_options if count <= available_count]
+    if not available_counts:
+        await send_text(chat_id, "Для этой темы пока недостаточно вопросов. Выбери другую тему.", get_topics_keyboard_http())
+        await state.set_state(State.SELECT_TOPIC)
+        return
+    await send_text(chat_id, "⚙️ Выбери длину раунда:", get_question_count_keyboard_http(available_counts))
 
 
 async def select_count(user_id: int, chat_id: int, count_text: str) -> None:
     if count_text == "back":
         await select_topic(user_id, chat_id, "back")
         return
-    count = int(count_text)
+    try:
+        count = int(count_text)
+    except ValueError:
+        await send_text(chat_id, "Некорректная длина раунда. Выбери вариант кнопкой.")
+        return
     state = await get_context(user_id)
     data = await state.get_data()
-    game = await db_manager.create_game(user_id, data.get("selected_topic", "general"),
-                                        data.get("selected_difficulty", "medium"), count)
+    topic = data.get("selected_topic", "general")
+    difficulty = data.get("selected_difficulty", "medium")
+    available_count = await db_manager.available_question_count(topic, difficulty)
+    available_counts = [option for option in settings.GAME.question_options if option <= available_count]
+    if count not in available_counts:
+        await send_text(chat_id, "Этот размер пока недоступен для выбранной темы.",
+                        get_question_count_keyboard_http(available_counts))
+        return
+    try:
+        game = await db_manager.create_game(user_id, topic, difficulty, count)
+    except ValueError:
+        logger.warning("game_creation_pool_changed user_id=%s topic=%s difficulty=%s count=%s", user_id, topic, difficulty, count)
+        await send_text(chat_id, "Набор вопросов обновился. Выбери доступную длину ещё раз.",
+                        get_question_count_keyboard_http(available_counts))
+        return
     await state.update_data(game_id=game.id, mode=GameMode.SOLO.value)
     await state.set_state(State.IN_GAME)
     await send_question(chat_id, game.id)
@@ -471,6 +586,9 @@ async def main() -> None:
     finally:
         if http_client:
             await http_client.close()
+        close_session = getattr(bot, "close_session", None)
+        if close_session:
+            await close_session()
         await close_db()
 
 

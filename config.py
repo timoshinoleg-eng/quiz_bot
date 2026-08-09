@@ -53,7 +53,7 @@ class GameConfig:
     """
     answer_timeout: int = 30
     max_lives: int = 3
-    question_options: tuple = (5, 10, 15)
+    question_options: tuple = (5, 10, 15, 20)
     points_correct: int = 100
     points_speed_bonus: int = 50
     daily_question_count: int = 5

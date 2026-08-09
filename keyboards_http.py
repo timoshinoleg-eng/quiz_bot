@@ -318,21 +318,18 @@ def get_difficulty_keyboard_http() -> List[List[Dict[str, str]]]:
     )
 
 
-def get_question_count_keyboard_http() -> List[List[Dict[str, str]]]:
-    """Улучшенный выбор количества вопросов."""
-    return KeyboardFactory.keyboard(
-        KeyboardFactory.row(
-            KeyboardFactory.callback_button("5 🎯", "count:5"),
-            KeyboardFactory.callback_button("10 ⭐", "count:10")
-        ),
-        KeyboardFactory.row(
-            KeyboardFactory.callback_button("15 🏆", "count:15"),
-            KeyboardFactory.callback_button("20 💎", "count:20")
-        ),
-        KeyboardFactory.row(
-            KeyboardFactory.callback_button("⬅️ Назад", "count:back")
-        ),
-    )
+def get_question_count_keyboard_http(available_counts: Optional[List[int]] = None) -> List[List[Dict[str, str]]]:
+    """Show only round lengths that the current question pool can serve."""
+    labels = {5: "5 🎯", 10: "10 ⭐", 15: "15 🏆", 20: "20 💎"}
+    counts = [count for count in (available_counts or list(labels)) if count in labels]
+    rows = []
+    for index in range(0, len(counts), 2):
+        rows.append(KeyboardFactory.row(*[
+            KeyboardFactory.callback_button(labels[count], f"count:{count}")
+            for count in counts[index:index + 2]
+        ]))
+    rows.append(KeyboardFactory.row(KeyboardFactory.callback_button("⬅️ Назад", "count:back")))
+    return KeyboardFactory.keyboard(*rows)
 
 
 def get_feedback_keyboard_http(is_correct: bool, correct_answer: str = None) -> List[List[Dict[str, str]]]:
