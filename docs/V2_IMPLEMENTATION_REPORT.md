@@ -14,7 +14,7 @@ React Mini App now has a game-style Home, pack catalog, timed answer view, feedb
 
 ## Content
 
-Bootstrap installs **550 reviewed V2 RU records in 10 packs**. Existing 30 beta records are preserved, so the current local database reports 585 active RU questions. `python -m scripts.content.audit` is the acceptance gate.
+Bootstrap installs **550 V2 RU records in 10 packs**; the legacy 30-record seed is retained but inactive. `python -m scripts.content.audit` is the acceptance gate.
 
 ## Known issues
 
