@@ -226,7 +226,7 @@ async def send_text(chat_id: int, text: str, buttons=None) -> None:
 
 
 async def send_menu(chat_id: int, title: str = "🏠 Главное меню") -> None:
-    await send_text(chat_id, title, get_main_menu_keyboard_http())
+    await send_text(chat_id, title, get_main_menu_keyboard_http(mini_app_url=settings.MINI_APP_URL))
 
 
 async def send_question(chat_id: int, game_id: int) -> None:

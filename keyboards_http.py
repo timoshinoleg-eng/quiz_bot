@@ -172,7 +172,7 @@ def get_premium_keyboard_http() -> List[List[Dict[str, str]]]:
 
 # === Фабричные функции для викторины ===
 
-def get_main_menu_keyboard_http(is_premium: bool = False) -> List[List[Dict[str, str]]]:
+def get_main_menu_keyboard_http(is_premium: bool = False, mini_app_url: str = "") -> List[List[Dict[str, str]]]:
     """Beta main menu; monetization is intentionally absent."""
     rows = [
         KeyboardFactory.row(
@@ -188,6 +188,8 @@ def get_main_menu_keyboard_http(is_premium: bool = False) -> List[List[Dict[str,
             KeyboardFactory.callback_button("❓ Помощь", "menu:help")
         ),
     ]
+    if mini_app_url:
+        rows.insert(0, KeyboardFactory.row(KeyboardFactory.link_button("🎮 Играть в Quiz Battle", mini_app_url)))
     
     return KeyboardFactory.keyboard(*rows)
 

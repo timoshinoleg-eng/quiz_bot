@@ -12,6 +12,8 @@ ENV/
 
 # Local secrets
 .env
+frontend/node_modules/
+frontend/tsconfig.tsbuildinfo
 !.env.example
 
 # IDE

@@ -87,6 +87,7 @@ class User(Base):
     games = relationship("Game", back_populates="user")
     daily_results = relationship("DailyResult", back_populates="user")
     challenge_attempts = relationship("ChallengeAttempt", back_populates="user")
+    question_history = relationship("UserQuestionHistory", back_populates="user", cascade="all, delete-orphan")
 
 
 class Question(Base):
@@ -101,12 +102,70 @@ class Question(Base):
     explanation = Column(Text, nullable=True)
     source = Column(String(100), nullable=False, default="seed")
     source_id = Column(String(100), nullable=True)
+    source_url = Column(String(500), nullable=True)
+    source_license = Column(String(120), nullable=False, default="CC0-1.0")
+    language = Column(String(8), nullable=False, default="ru", server_default="ru", index=True)
+    tags = Column(JSON, nullable=False, default=list, server_default="[]")
+    age_min = Column(Integer, nullable=False, default=10, server_default="10")
+    age_max = Column(Integer, nullable=False, default=14, server_default="14")
+    verified = Column(Boolean, nullable=False, default=False, server_default="0", index=True)
+    content_rating = Column(String(16), nullable=False, default="kids", server_default="kids")
     is_active = Column(Boolean, nullable=False, default=True, server_default="1", index=True)
     usage_count = Column(Integer, nullable=False, default=0, server_default="0")
     correct_rate = Column(Float, nullable=False, default=0.0, server_default="0")
     created_at = Column(DateTime, nullable=False, server_default=func.now())
 
     game_questions = relationship("GameQuestion", back_populates="question")
+    packs = relationship("QuizPack", secondary="quiz_pack_questions", back_populates="questions")
+    history = relationship("UserQuestionHistory", back_populates="question", cascade="all, delete-orphan")
+
+
+class QuizPack(Base):
+    __tablename__ = "quiz_packs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    slug = Column(String(64), nullable=False, unique=True, index=True)
+    title = Column(String(160), nullable=False)
+    short_description = Column(String(280), nullable=False)
+    description = Column(Text, nullable=False)
+    emoji = Column(String(16), nullable=False)
+    category = Column(String(32), nullable=False, index=True)
+    language = Column(String(8), nullable=False, default="ru", server_default="ru")
+    age_min = Column(Integer, nullable=False, default=10, server_default="10")
+    age_max = Column(Integer, nullable=False, default=14, server_default="14")
+    featured = Column(Boolean, nullable=False, default=False, server_default="0", index=True)
+    active = Column(Boolean, nullable=False, default=True, server_default="1", index=True)
+    sort_order = Column(Integer, nullable=False, default=0, server_default="0")
+    estimated_minutes = Column(Integer, nullable=False, default=2, server_default="2")
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    questions = relationship("Question", secondary="quiz_pack_questions", back_populates="packs")
+
+
+class QuizPackQuestion(Base):
+    __tablename__ = "quiz_pack_questions"
+    __table_args__ = (UniqueConstraint("quiz_pack_id", "question_id", name="uq_quiz_pack_question"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    quiz_pack_id = Column(Integer, ForeignKey("quiz_packs.id", ondelete="CASCADE"), nullable=False, index=True)
+    question_id = Column(Integer, ForeignKey("questions.id", ondelete="CASCADE"), nullable=False, index=True)
+
+
+class UserQuestionHistory(Base):
+    __tablename__ = "user_question_history"
+    __table_args__ = (UniqueConstraint("user_id", "question_id", name="uq_user_question_history"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    question_id = Column(Integer, ForeignKey("questions.id", ondelete="CASCADE"), nullable=False, index=True)
+    times_seen = Column(Integer, nullable=False, default=0, server_default="0")
+    times_correct = Column(Integer, nullable=False, default=0, server_default="0")
+    last_seen_at = Column(DateTime, nullable=True, index=True)
+    last_is_correct = Column(Boolean, nullable=True)
+
+    user = relationship("User", back_populates="question_history")
+    question = relationship("Question", back_populates="history")
 
 
 class Game(Base):

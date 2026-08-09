@@ -1,10 +1,12 @@
 # Quiz Battle MAX
 
-Закрытая consumer beta быстрой викторины для мессенджера MAX: общий вопрос дня, короткие раунды, вызов друга, XP, streak и недельный рейтинг.
+Consumer beta Quiz Battle MAX: Mini App-каталог, короткие раунды, Daily, вызовы, XP, streak и рейтинг.
 
 ## Реализовано
 
-- `/start` с понятным меню: Daily, быстрая игра, вызов друга, рейтинг и профиль.
+- React Mini App (`frontend/`) с Home, каталогом из 10 packs, игровым экраном, результатом и sharing fallback.
+- FastAPI `/api/v1` для каталога, content stats, профиля и server-authoritative игр.
+- 550 V2 RU content records через `python -m scripts.content.bootstrap`; `python -m scripts.content.audit` требует не менее 500 active RU вопросов.
 - Quick Game на 5/10/15 вопросов с server-side scoring и speed bonus.
 - Immutable question set: порядок и варианты ответа фиксируются при создании игры.
 - Correct answer не попадает в callback: клиент отправляет только `game_id`, позицию и выбранный индекс.
@@ -24,10 +26,12 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 Copy-Item .env.example .env
-# Заполните BOT_TOKEN в .env
-python -m alembic upgrade head
-python scripts/load_questions.py --file content/beta_seed.json
-python bot.py
+# Заполните BOT_TOKEN и APP_SESSION_SECRET в .env
+.\.venv\Scripts\python -m alembic upgrade head
+.\.venv\Scripts\python -m scripts.content.bootstrap
+.\.venv\Scripts\python -m scripts.content.audit
+.\.venv\Scripts\python -m uvicorn api:app --reload
+# Отдельно: cd frontend; npm install; npm run dev
 ```
 
 Для локального режима используется `sqlite+aiosqlite:///./quiz_bot.db`. Для hosted beta задайте `DATABASE_URL` на PostgreSQL и выполните миграции.
@@ -46,9 +50,10 @@ python bot.py
 
 Рабочий HTTP client использует `https://platform-api2.max.ru` и заголовок `Authorization: <BOT_TOKEN>`. Для локальной beta используется polling; переход на webhook не требует переписывания game services.
 
-## Beta limitations
+## V2 deployment gates
 
-- Платежи, Premium, реклама, Redis realtime, турниры и Mini App выключены.
+- Mini App требует HTTPS и регистрации URL в MAX Partner Cabinet; до этого бот сохраняет текстовый fallback.
+- Production принимает только подписанный MAX `initData`; `X-Development-User` работает лишь при `ENV=development`.
 - Автоматические push-рассылки не выполняются.
 - Webhook deployment требует отдельного HTTPS ingress и настройки подписки MAX.
 - Существующий backup исходной распакованной копии сохранён вне Git как `quiz_bot-legacy-snapshot-20260809`.

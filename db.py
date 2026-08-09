@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from typing import Any, AsyncGenerator, Dict, Iterable, List, Optional, Sequence
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, or_
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import selectinload
 
@@ -31,7 +31,10 @@ from models import (
     GameStatus,
     Question,
     QuestionCategory,
+    QuizPack,
+    QuizPackQuestion,
     User,
+    UserQuestionHistory,
 )
 
 logger = logging.getLogger(__name__)
@@ -173,18 +176,33 @@ class DatabaseManager:
             return (user.current_state, user.state_data or {}) if user else (None, {})
 
     async def _question_pool(self, db: AsyncSession, category: Any, difficulty: Any,
-                             count: int) -> List[Question]:
+                             count: int, user_id: Optional[int] = None,
+                             pack_slug: Optional[str] = None) -> List[Question]:
         category_value = value_of(category)
         difficulty_value = value_of(difficulty)
         query = (
-            select(Question)
+            select(Question, UserQuestionHistory)
+            .outerjoin(UserQuestionHistory, (UserQuestionHistory.question_id == Question.id) &
+                       (UserQuestionHistory.user_id == user_id if user_id is not None else False))
             .where(Question.is_active.is_(True))
-            .where(Question.category == category_value)
-            .where(Question.difficulty == difficulty_value)
-            .order_by(func.random())
-            .limit(count)
         )
-        questions = list((await db.execute(query)).scalars().all())
+        if pack_slug:
+            query = query.join(QuizPackQuestion, QuizPackQuestion.question_id == Question.id).join(
+                QuizPack, QuizPack.id == QuizPackQuestion.quiz_pack_id
+            ).where(QuizPack.slug == pack_slug, QuizPack.active.is_(True))
+        else:
+            query = query.where(Question.category == category_value)
+        query = query.where(Question.difficulty == difficulty_value)
+        rows = list((await db.execute(query)).all())
+        # A transparent unseen-first policy.  Earlier mistakes are then repeated before
+        # already-mastered material; least recently seen breaks ties.
+        random.shuffle(rows)
+        rows.sort(key=lambda row: (
+            0 if row[1] is None else 1,
+            0 if row[1] is not None and not row[1].last_is_correct else 1,
+            row[1].last_seen_at if row[1] and row[1].last_seen_at else datetime.min,
+        ))
+        questions = [row[0] for row in rows[:count]]
         if len(questions) < count:
             fallback = (
                 select(Question)
@@ -221,11 +239,12 @@ class DatabaseManager:
 
     async def _new_game(self, db: AsyncSession, user_id: int, category: Any, difficulty: Any,
                         question_count: int, mode: Any = GameMode.SOLO, daily_date: Optional[date] = None,
-                        challenge_id: Optional[int] = None, question_ids: Optional[Sequence[int]] = None) -> Game:
+                        challenge_id: Optional[int] = None, question_ids: Optional[Sequence[int]] = None,
+                        pack_slug: Optional[str] = None) -> Game:
         if question_count not in (5, 10, 15, 20):
             raise ValueError("question_count must be one of 5, 10, 15, 20")
         if question_ids is None:
-            questions = await self._question_pool(db, category, difficulty, question_count)
+            questions = await self._question_pool(db, category, difficulty, question_count, user_id, pack_slug)
         else:
             rows = (await db.execute(select(Question).where(Question.id.in_(list(question_ids))))).scalars().all()
             by_id = {row.id: row for row in rows}
@@ -263,10 +282,11 @@ class DatabaseManager:
     async def create_game(self, user_id: int, category: Any = QuestionCategory.GENERAL,
                           difficulty: Any = DifficultyLevel.MEDIUM, question_count: int = 5,
                           mode: Any = GameMode.SOLO, daily_date: Optional[date] = None,
-                          challenge_id: Optional[int] = None, question_ids: Optional[Sequence[int]] = None) -> Game:
+                        challenge_id: Optional[int] = None, question_ids: Optional[Sequence[int]] = None,
+                        pack_slug: Optional[str] = None) -> Game:
         async with get_db() as db:
             return await self._new_game(db, user_id, category, difficulty, question_count, mode, daily_date,
-                                        challenge_id, question_ids)
+                                        challenge_id, question_ids, pack_slug)
 
     async def get_game(self, game_id: int) -> Optional[Game]:
         async with get_db() as db:
@@ -325,6 +345,17 @@ class DatabaseManager:
             game_question.answer_time = elapsed
             game_question.points_earned = points
             game_question.answered_at = now
+            history = await db.scalar(select(UserQuestionHistory).where(
+                UserQuestionHistory.user_id == user_id,
+                UserQuestionHistory.question_id == game_question.question_id,
+            ))
+            if history is None:
+                history = UserQuestionHistory(user_id=user_id, question_id=game_question.question_id)
+                db.add(history)
+            history.times_seen = int(history.times_seen or 0) + 1
+            history.times_correct = int(history.times_correct or 0) + int(correct)
+            history.last_seen_at = now
+            history.last_is_correct = correct
             game.score += points
             game.correct_answers += int(correct)
             game.answered_questions += 1

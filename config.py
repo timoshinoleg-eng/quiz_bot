@@ -86,6 +86,7 @@ class Settings:
         """Инициализирует настройки из переменных окружения."""
         self.DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
         self.ENV: str = os.getenv("ENV", "development")
+        self.MINI_APP_URL: str = os.getenv("MINI_APP_URL", "")
         
         # Bot configuration
         self.BOT = BotConfig(
