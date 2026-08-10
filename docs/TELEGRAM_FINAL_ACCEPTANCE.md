@@ -1,5 +1,7 @@
 # Telegram final acceptance
 
+> Historical pre-remediation review. The duplicate-content and uncommitted-state findings below describe the earlier snapshot. Current local status is maintained in [LIVE_SMOKE_REPORT.md](LIVE_SMOKE_REPORT.md); external Telegram proof is still required.
+
 Date: 2026-08-10. This is an independent acceptance of the committed Telegram target and the current local remediation worktree; it is not a production or live-Telegram claim.
 
 ## 1. Git state

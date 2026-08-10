@@ -1,0 +1,56 @@
+name: Quiz Battle CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install test dependencies
+        run: python -m pip install -r requirements_test.txt
+      - name: Compile, test, bootstrap and audit content
+        run: |
+          python -m compileall -q .
+          pytest -q
+          python -m scripts.content.bootstrap
+          python -m scripts.content.audit
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Typecheck, test and build Mini App
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+          npm run build
+
+  image:
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and import-check the production image
+        run: |
+          docker build --tag quiz-battle:ci .
+          docker run --rm quiz-battle:ci python -c "import api, db, models; print('image import ok')"

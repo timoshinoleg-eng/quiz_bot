@@ -1,5 +1,7 @@
 # Quiz Battle MAX V2 implementation report
 
+> Historical implementation snapshot. The former content-duplicate blocker was remediated locally; use [LIVE_SMOKE_REPORT.md](LIVE_SMOKE_REPORT.md) for the current release gates.
+
 ## Delivered local implementation
 
 The baseline MAX text bot now has a Vite + React Mini App, a FastAPI game API,

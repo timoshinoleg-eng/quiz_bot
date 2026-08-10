@@ -1,55 +1,31 @@
-# MAX-Квиз Bot Dockerfile
-FROM python:3.11-slim as builder
+# syntax=docker/dockerfile:1
+FROM node:22-alpine AS frontend-builder
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
 
-# Установка зависимостей для сборки
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Создание виртуального окружения
+FROM python:3.11-slim AS python-builder
+WORKDIR /build
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
-
-# Установка Python зависимостей
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
-# Финальный образ
-FROM python:3.11-slim
-
-# Установка runtime зависимостей
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 \
-    fonts-dejavu \
-    && rm -rf /var/lib/apt/lists/*
-
-# Копирование виртуального окружения
-COPY --from=builder /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-
-# Создание пользователя
-RUN useradd -m -u 1000 quizbot && mkdir -p /app && chown quizbot:quizbot /app
-USER quizbot
-
-# Рабочая директория
+FROM python:3.11-slim AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends libpq5 ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN useradd --create-home --uid 1000 --shell /usr/sbin/nologin quizbot
 WORKDIR /app
-
-# Копирование кода
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    ENV=production
+COPY --from=python-builder /opt/venv /opt/venv
 COPY --chown=quizbot:quizbot . .
-
-# Создание директорий
-RUN mkdir -p logs generated_cards assets
-
-# Переменные окружения
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV ENV=production
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import asyncio; print('OK')" || exit 1
-
-# Запуск
-CMD ["python", "bot.py"]
+COPY --from=frontend-builder --chown=quizbot:quizbot /frontend/dist ./frontend/dist
+RUN mkdir -p logs generated_cards assets && chown -R quizbot:quizbot /app
+USER quizbot
+EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD python -c "from urllib.request import urlopen; assert urlopen('http://127.0.0.1:8000/health', timeout=3).status == 200"
+CMD ["python", "-m", "uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]

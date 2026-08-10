@@ -1,29 +1,39 @@
 services:
   postgres:
-    image: postgres:15-alpine
-    restart: unless-stopped
+    image: postgres:16-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-quiz_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quiz_pass}
-      POSTGRES_DB: ${POSTGRES_DB:-quiz_db}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local_dev_only}
+      POSTGRES_DB: ${POSTGRES_DB:-quiz_battle}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-quiz_user} -d ${POSTGRES_DB:-quiz_db}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-quiz_user} -d ${POSTGRES_DB:-quiz_battle}"]
       interval: 5s
       timeout: 5s
       retries: 10
 
-  bot:
+  app:
     build: .
-    restart: unless-stopped
     environment:
-      BOT_TOKEN: ${BOT_TOKEN:?BOT_TOKEN is required}
-      BOT_USERNAME: ${BOT_USERNAME:-}
-      BOT_MODE: ${BOT_MODE:-polling}
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-quiz_user}:${POSTGRES_PASSWORD:-quiz_pass}@postgres:5432/${POSTGRES_DB:-quiz_db}
-      DAILY_QUESTION_COUNT: ${DAILY_QUESTION_COUNT:-5}
-      CHALLENGE_QUESTION_COUNT: ${CHALLENGE_QUESTION_COUNT:-5}
+      ENV: development
+      BOT_MODE: polling
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-quiz_user}:${POSTGRES_PASSWORD:-local_dev_only}@postgres:5432/${POSTGRES_DB:-quiz_battle}
+      APP_SESSION_SECRET: local-development-only
+      CORS_ORIGINS: http://localhost:5173
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  migrate:
+    build: .
+    environment:
+      ENV: development
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-quiz_user}:${POSTGRES_PASSWORD:-local_dev_only}@postgres:5432/${POSTGRES_DB:-quiz_battle}
+    command: ["/bin/sh", "-ec", "alembic upgrade head && python -m scripts.content.bootstrap && python -m scripts.content.audit"]
+    profiles: ["tools"]
     depends_on:
       postgres:
         condition: service_healthy

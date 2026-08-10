@@ -1,0 +1,41 @@
+services:
+  migrate:
+    image: ${IMAGE_REF:?IMAGE_REF is required}
+    env_file: .env
+    command: ["/bin/sh", "-ec", "python -m scripts.production_preflight && alembic upgrade head && python -m scripts.content.bootstrap && python -m scripts.content.audit"]
+    restart: "no"
+
+  app:
+    image: ${IMAGE_REF:?IMAGE_REF is required}
+    env_file: .env
+    command: ["/bin/sh", "-ec", "python -m scripts.production_preflight && exec python -m uvicorn api:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips '*'"]
+    restart: unless-stopped
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; assert urlopen('http://127.0.0.1:8000/ready', timeout=3).status == 200"]
+      interval: 30s
+      timeout: 5s
+      start_period: 45s
+      retries: 3
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:?PUBLIC_HOST is required}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

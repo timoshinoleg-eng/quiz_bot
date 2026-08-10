@@ -30,6 +30,8 @@ async def main():
                 db.add(question); await db.flush(); imported+=1
             else:
                 question.text=row["text"]; question.correct_answer=row["correct_answer"]; question.wrong_answers=row["wrong_answers"]; question.explanation=row["explanation"]; question.difficulty=row["difficulty"]; question.verified=True
+            question.source_url=row["source_url"]
+            question.source_license=row["source_license"]
             linked=await db.scalar(select(QuizPackQuestion).where(QuizPackQuestion.quiz_pack_id==packs[row["pack"]].id,QuizPackQuestion.question_id==question.id))
             if linked is None: db.add(QuizPackQuestion(quiz_pack_id=packs[row["pack"]].id,question_id=question.id))
     print(f"Imported: {imported}\nActive RU: {len(records)}\nRejected: 0\nDuplicates: 0")

@@ -18,6 +18,7 @@ class BotConfig:
     token: str
     webhook_url: Optional[str] = None
     webhook_path: str = "/webhook"
+    webhook_secret: Optional[str] = None
     polling_timeout: int = 30
     mode: str = "polling"
     username: Optional[str] = None
@@ -101,8 +102,9 @@ class Settings:
             # BOT_TOKEN is canonical.  MAX_BOT_TOKEN is accepted only as a
             # migration aid for old local .env files.
             token=os.getenv("BOT_TOKEN") or os.getenv("MAX_BOT_TOKEN", ""),
-            webhook_url=os.getenv("WEBHOOK_URL"),
-            webhook_path=os.getenv("WEBHOOK_PATH", "/webhook"),
+            webhook_url=os.getenv("MAX_WEBHOOK_URL") or os.getenv("WEBHOOK_URL"),
+            webhook_path=os.getenv("MAX_WEBHOOK_PATH") or os.getenv("WEBHOOK_PATH", "/webhooks/max"),
+            webhook_secret=os.getenv("MAX_WEBHOOK_SECRET") or None,
             polling_timeout=int(os.getenv("POLLING_TIMEOUT", "30")),
             mode=os.getenv("BOT_MODE", "polling").lower(),
             username=os.getenv("BOT_USERNAME") or None,

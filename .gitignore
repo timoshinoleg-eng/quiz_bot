@@ -12,9 +12,15 @@ ENV/
 
 # Local secrets
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*
+secrets*
+гитверс.txt
 frontend/node_modules/
 frontend/tsconfig.tsbuildinfo
-!.env.example
 
 # IDE
 .vscode/

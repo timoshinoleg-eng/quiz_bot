@@ -1,7 +1,7 @@
 """FastAPI boundary for the Mini App; game rules stay in db_manager."""
 from __future__ import annotations
 import base64, hashlib, hmac, json, os, time
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Literal
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -15,17 +15,35 @@ from max_auth import MaxAuthError, MaxIdentity, validate_init_data
 from telegram_auth import TelegramAuthError, TelegramIdentity, validate_init_data as validate_telegram_init_data
 from models import Question, QuizPack, UserQuestionHistory
 
+def configure_max_webhook(app: FastAPI):
+    """Mount MAX's supported webhook adapter when production config enables it."""
+    if settings.BOT.mode != "webhook":
+        return None
+    if not settings.BOT.token or not settings.BOT.webhook_secret:
+        raise RuntimeError("BOT_TOKEN and MAX_WEBHOOK_SECRET are required for MAX webhook mode")
+    from bot import bot, dp
+    from maxapi.webhook.fastapi import FastAPIMaxWebhook
+
+    webhook = FastAPIMaxWebhook(dp=dp, bot=bot, secret=settings.BOT.webhook_secret)
+    webhook.setup(app, path=settings.BOT.webhook_path)
+    return webhook
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await init_db()
-    try:
-        yield
-    finally:
-        await close_db()
+    async with AsyncExitStack() as stack:
+        if max_webhook is not None:
+            await stack.enter_async_context(max_webhook.lifespan(app))
+        try:
+            yield
+        finally:
+            await close_db()
 
 
 app = FastAPI(title="Quiz Battle API", version="2.1", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:5173").split(","), allow_credentials=False, allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type", "X-Development-User"])
+max_webhook = configure_max_webhook(app)
 class AuthPayload(BaseModel): init_data: str = Field(min_length=12)
 class NewGame(BaseModel):
     pack_slug: str | None = None
@@ -60,6 +78,14 @@ def public_game(game, rows) -> dict:
     return {"id":game.id,"mode":game.mode,"status":game.status,"score":game.score,"correct_answers":game.correct_answers,"question_count":game.question_count,"current_question":None if not current else {"position":current.position,"text":current.question.text,"options":current.answer_options,"timeout_seconds":settings.GAME.answer_timeout}}
 @app.get("/health")
 async def health(): return {"status":"ok", "service":"quiz-battle-api"}
+@app.get("/ready")
+async def ready():
+    try:
+        async with get_db() as db:
+            await db.scalar(select(1))
+    except Exception as error:
+        raise HTTPException(503, "Database is not ready") from error
+    return {"status":"ready", "service":"quiz-battle-api"}
 @app.post("/api/v1/auth/max")
 async def auth_max(payload: AuthPayload):
     try: identity = validate_init_data(payload.init_data, settings.BOT.token)

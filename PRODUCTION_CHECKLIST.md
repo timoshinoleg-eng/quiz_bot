@@ -1,41 +1,23 @@
-# Quiz Battle MAX — closed beta checklist
+# Quiz Battle production-beta checklist
 
-## Before a real two-user test
+## Local acceptance
 
-- [ ] Create a MAX bot and put its token only in `.env` as `BOT_TOKEN`.
-- [ ] Set `BOT_USERNAME` if deep-link invitations are desired.
-- [ ] Use `DEBUG=false` and a private PostgreSQL URL for hosted beta.
-- [ ] Run `alembic upgrade head`.
-- [ ] Run `python scripts/load_questions.py --file content/beta_seed.json`.
-- [ ] Confirm the question count is at least five for every category used.
-- [ ] Keep the bot token out of logs, commits and screenshots.
+- [x] `python -m compileall -q .`
+- [x] `pytest -q`
+- [x] `python -m scripts.content.bootstrap` and `python -m scripts.content.audit`
+- [x] `npm run typecheck`, `npm test` and `npm run build` in `frontend`
+- [x] production image build plus isolated `/health` and `/ready` response
+- [x] Caddy and production Compose configuration validation
+- [x] webhook registration dry-run for MAX and Telegram
 
-## Local smoke
+## External acceptance
 
-```powershell
-python -m compileall -q .
-pytest -q
-python bot.py
-```
+- [ ] Private GitVerse repository has the committed source, CI/CD enabled and a green exact-main run.
+- [ ] Cloud.ru VM, private Managed PostgreSQL, DNS and public HTTPS certificate are live.
+- [ ] Runtime `.env` passes `python -m scripts.production_preflight` on the VM.
+- [ ] PostgreSQL backup restore was rehearsed against an isolated database.
+- [ ] BotFather has the exact HTTPS Mini App URL; Telegram webhook and menu button are registered.
+- [ ] MAX Partner Cabinet has the exact HTTPS Mini App URL; MAX subscription is registered.
+- [ ] Two distinct users complete Daily, Quick Game and Friend Challenge in each platform.
 
-1. `/start` shows Daily, challenge, quick game, ranking and profile.
-2. Daily reaches five questions and stores the result.
-3. A second Daily click does not create a second ranked attempt.
-4. `/challenge` gives a code; `/join CODE` starts the same question set for user B.
-5. Duplicate callback does not change score or XP.
-6. Restarting the process does not lose Daily or Challenge state.
-
-## Docker beta
-
-```powershell
-docker compose build
-docker compose up -d postgres
-docker compose run --rm bot alembic upgrade head
-docker compose run --rm bot python scripts/load_questions.py --file content/beta_seed.json
-docker compose up -d bot
-docker compose logs -f bot
-```
-
-## Explicitly out of scope
-
-Payments, Premium, ads, Redis realtime, tournaments, Mini App, automatic push campaigns and production webhook ingress require separate acceptance work.
+The commands, environment contract and rollback path are in `docs/PRODUCTION_BETA_DEPLOYMENT.md`. Do not mark the beta public until every external item has a recorded PASS.

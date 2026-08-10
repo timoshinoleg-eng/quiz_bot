@@ -8,7 +8,7 @@ reported separately.
 | --- | --- | --- |
 | Mini App, responsive game UI and MAX text fallback | PARTIAL | React build passes; Home, catalog, game, feedback, result and bottom navigation are implemented. No live MAX visual or device smoke was available. |
 | Catalog of 10 packs | PASS | Clean bootstrap produced 10 non-empty packs, 55 active questions each. |
-| 500+ active Russian questions | PARTIAL | 550 active RU records exist, but 218 near-duplicate variants remain. This is a public-beta blocker. |
+| 500+ active Russian questions | PASS (local) | Clean bootstrap produces 550 active RU records in ten packs of 55. Audit reports exact 0, fuzzy 0, invalid 0 and missing provenance 0. |
 | Correct answers and answer validation | PASS | Authoritative database check and API smoke confirm the player response does not include answer keys. Duplicate callbacks remain idempotent. |
 | Quick Game and question selection | PASS | Regression covers a no-`general` catalog: Quick returns five active questions. The user may select 5/10/15/20. |
 | Daily Challenge | PASS | Regression/API smoke confirms exactly seven questions, one daily game policy, streak and leaderboard service paths. |
@@ -17,9 +17,9 @@ reported separately.
 | Timer, feedback and result screen | PASS | Client has a countdown, timeout answer, feedback lock and result view; frontend production build passes. |
 | Daily themes, weekly missions, combo and expanded achievements | FAIL | Not implemented in the current product. |
 | External providers, translation review and media questions | FAIL | Not implemented. The content source file only records research status. |
-| Content audit and CI | PARTIAL | Audit reports packs/categories/difficulty/sources and blocks exact/near duplicates. CI runs it plus frontend tests/build, but no remote Actions run has been evidenced. |
+| Content audit and CI | PARTIAL | Local audit reports packs/categories/difficulty/sources and blocks exact/near duplicates plus missing provenance. GitVerse workflows are committed, but no remote Actions run has been evidenced. |
 | Production security | PARTIAL | Production requires `APP_SESSION_SECRET` and validated MAX init data. HTTPS, Partner Cabinet registration, production database/backup restore and rate-limit evidence are absent. |
-| Docker build | UNKNOWN | Docker Desktop daemon was stopped locally; `docker compose build` could not run. |
+| Docker build | PASS (local) | Production image builds and an isolated container returns both `/health = ok` and `/ready = ready`. |
 | Required documentation | PARTIAL | Architecture/content/deployment documentation exists, but it must be updated when the missing provider, translation and release paths are implemented. |
 
 ## Fixed during this review
@@ -31,13 +31,16 @@ reported separately.
 3. The frontend now uses live profile, achievement and leaderboard data, has a
    working timer/timeout, and preserves answer totals between questions.
 4. The production session signer now fails closed without `APP_SESSION_SECRET`.
-5. The audit and CI now detect near-duplicate content rather than treating a
-   cosmetic rewording as a successful corpus.
+5. The 218 former near-duplicate content variants were replaced with distinct
+   sourced records; bootstrap/audit now passes on a clean active corpus.
+6. Production preflight, Caddy HTTPS proxy, registry-to-VM deployment scripts
+   and GitVerse workflows were added and validated locally.
 
 ## Release verdict
 
-**NO-GO for public beta.** The shortest path to a private pilot is: replace the
-218 near-duplicate variants with distinct sourced questions; run the clean
-database/audit gate successfully; then complete HTTPS, Partner Cabinet,
-signed-initData and two-account MAX smoke. Until those gates pass, retain the
-text-bot fallback and do not market the Mini App as production ready.
+**NO-GO for an external beta.** The content and container gates now pass
+locally. The remaining sequence is external and must be evidenced: private
+GitVerse CI, Cloud.ru VM/Managed PostgreSQL/DNS/HTTPS, MAX Partner Cabinet,
+BotFather, signed init-data and two-account MAX/Telegram smoke. Until those
+gates pass, retain the text-bot fallback and do not market the Mini App as
+production ready.

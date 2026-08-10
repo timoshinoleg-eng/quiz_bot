@@ -1,0 +1,45 @@
+name: Deploy production beta
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      IMAGE_REF: ${{ vars.CLOUD_RU_REGISTRY_URI }}:${{ github.sha }}
+      REGISTRY_HOST: ${{ vars.CLOUD_RU_REGISTRY_HOST }}
+      REGISTRY_USERNAME: ${{ secrets.CLOUD_RU_REGISTRY_USERNAME }}
+      REGISTRY_PASSWORD: ${{ secrets.CLOUD_RU_REGISTRY_PASSWORD }}
+      DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+      DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+      PUBLIC_HOST: ${{ vars.PUBLIC_HOST }}
+      ACME_EMAIL: ${{ vars.ACME_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH trust
+        run: |
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 600 "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Authenticate, build and push image
+        run: |
+          printf '%s' "$REGISTRY_PASSWORD" | docker login "$REGISTRY_HOST" --username "$REGISTRY_USERNAME" --password-stdin
+          docker build --tag "$IMAGE_REF" .
+          docker push "$IMAGE_REF"
+      - name: Install deployment files and release exact image
+        run: |
+          DEPLOY_TARGET="$DEPLOY_USER@$DEPLOY_HOST"
+          ssh "$DEPLOY_TARGET" 'install -d -m 0750 /opt/quiz-battle'
+          scp deploy/compose.production.yml deploy/Caddyfile deploy/vm/deploy.sh "$DEPLOY_TARGET:/opt/quiz-battle/"
+          ssh "$DEPLOY_TARGET" 'chmod 750 /opt/quiz-battle/deploy.sh'
+          printf 'IMAGE_REF=%s\nPUBLIC_HOST=%s\nACME_EMAIL=%s\n' "$IMAGE_REF" "$PUBLIC_HOST" "$ACME_EMAIL" | ssh "$DEPLOY_TARGET" 'umask 077; cat > /opt/quiz-battle/.deploy.env; /opt/quiz-battle/deploy.sh'

@@ -4,14 +4,14 @@ Consumer beta with shared MAX and Telegram entries: one Mini App catalog, rounds
 
 ## Platforms
 
-- ✅ MAX
-- ✅ Telegram Mini App/backend transport (BotFather URL, HTTPS webhook and two-account live smoke remain deployment gates)
+- 🟡 MAX implementation complete locally; Partner Cabinet, HTTPS webhook and two-account live smoke remain external gates.
+- 🟡 Telegram Mini App/backend transport complete locally; BotFather URL, HTTPS webhook and two-account live smoke remain external gates.
 
 ## Реализовано
 
 - React Mini App (`frontend/`) с Home, каталогом из 10 packs, игровым экраном, результатом и sharing fallback.
 - FastAPI `/api/v1` для каталога, content stats, профиля и server-authoritative игр.
-- 550 V2 RU content records через `python -m scripts.content.bootstrap`; content audit блокирует exact и near-duplicate вопросы, поэтому текущий corpus ещё не готов к public beta.
+- 550 V2 RU content records в 10 packs по 55 вопросов через `python -m scripts.content.bootstrap`; локальный audit блокирует exact/semantic duplicates, пустую provenance и шаблонные distractors.
 - Quick Game на 5/10/15/20 вопросов с server-side scoring и speed bonus; Daily всегда состоит из 7 вопросов.
 - Immutable question set: порядок и варианты ответа фиксируются при создании игры.
 - Correct answer не попадает в callback: клиент отправляет только `game_id`, позицию и выбранный индекс.
@@ -20,7 +20,7 @@ Consumer beta with shared MAX and Telegram entries: one Mini App catalog, rounds
 - Асинхронный Friend Challenge по коду или MAX deep link, одинаковые вопросы, сравнение и реванш.
 - XP, уровни, базовые достижения и weekly leaderboard.
 - SQLite для локальной разработки и PostgreSQL для hosted beta.
-- Polling для локального beta; webhook оставлен как отдельная transport boundary.
+- Polling для локальной разработки; production использует проверяемые HTTPS webhook для MAX и Telegram.
 
 ## Быстрый запуск
 
@@ -57,8 +57,11 @@ Telegram: run `python telegram_bot.py` for the thin polling transport. It suppor
 
 Рабочий HTTP client использует `https://platform-api2.max.ru` и заголовок `Authorization: <BOT_TOKEN>`. Для локальной beta используется polling; переход на webhook не требует переписывания game services.
 
-## V2 deployment gates
+## Production beta
 
+- Production-образ, Compose с Caddy/HTTPS и fail-closed preflight входят в репозиторий. Полная инструкция: [docs/PRODUCTION_BETA_DEPLOYMENT.md](docs/PRODUCTION_BETA_DEPLOYMENT.md).
+- GitVerse CI/CD и необходимые защищённые переменные: [docs/GITVERSE_CI_CD.md](docs/GITVERSE_CI_CD.md).
+- Target hosting is Cloud.ru Evolution (VM + private Managed PostgreSQL); the current GitVerse repository and Cloud.ru resources are not yet externally verified.
 - Mini App требует HTTPS и регистрации URL в MAX Partner Cabinet; до этого бот сохраняет текстовый fallback.
 - Production принимает только подписанный MAX `initData`; `X-Development-User` работает лишь при `ENV=development`.
 - Автоматические push-рассылки не выполняются.
@@ -71,11 +74,11 @@ Telegram: run `python telegram_bot.py` for the thin polling transport. It suppor
 python -m compileall -q .
 python -m pip install -r requirements_test.txt
 pytest -q
-python -m scripts.content.audit # сейчас намеренно FAIL: 218 near-duplicates
+python -m scripts.content.audit # PASS required
 docker compose build
 ```
 
-Полный приёмочный статус и известные блокеры: [docs/V2_ACCEPTANCE_AUDIT.md](docs/V2_ACCEPTANCE_AUDIT.md).
+Локальный статус и внешние gate: [docs/LIVE_SMOKE_REPORT.md](docs/LIVE_SMOKE_REPORT.md).
 
 ## Структура
 
