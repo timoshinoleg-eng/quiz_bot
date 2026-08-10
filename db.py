@@ -225,6 +225,16 @@ class DatabaseManager:
             query = query.where(Question.category == category_value)
         query = query.where(Question.difficulty == difficulty_value)
         rows = list((await db.execute(query)).all())
+        # ``general`` is the cross-pack Quick/Daily mode.  The V2 corpus is
+        # intentionally organised into concrete packs, not a catch-all bucket.
+        if not rows and not pack_slug and category_value == QuestionCategory.GENERAL.value:
+            broad_query = (
+                select(Question, UserQuestionHistory)
+                .outerjoin(UserQuestionHistory, (UserQuestionHistory.question_id == Question.id) &
+                           (UserQuestionHistory.user_id == user_id if user_id is not None else False))
+                .where(Question.is_active.is_(True), Question.difficulty == difficulty_value)
+            )
+            rows = list((await db.execute(broad_query)).all())
         # A transparent unseen-first policy.  Earlier mistakes are then repeated before
         # already-mastered material; least recently seen breaks ties.
         random.shuffle(rows)
@@ -238,7 +248,7 @@ class DatabaseManager:
             fallback = (
                 select(Question)
                 .where(Question.is_active.is_(True))
-                .where(Question.category == QuestionCategory.GENERAL.value)
+                .where(Question.difficulty == difficulty_value)
                 .where(Question.id.not_in([q.id for q in questions] or [-1]))
                 .order_by(func.random())
                 .limit(count - len(questions))
@@ -272,8 +282,8 @@ class DatabaseManager:
                         question_count: int, mode: Any = GameMode.SOLO, daily_date: Optional[date] = None,
                         challenge_id: Optional[int] = None, question_ids: Optional[Sequence[int]] = None,
                         pack_slug: Optional[str] = None) -> Game:
-        if question_count not in (5, 10, 15, 20):
-            raise ValueError("question_count must be one of 5, 10, 15, 20")
+        if question_count not in (5, 7, 10, 15, 20):
+            raise ValueError("question_count must be one of 5, 7, 10, 15, 20")
         if question_ids is None:
             questions = await self._question_pool(db, category, difficulty, question_count, user_id, pack_slug)
         else:

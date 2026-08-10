@@ -70,7 +70,18 @@ def build_questions():
         items=items[:55]
         for item in cycle(original):
             if len(items)>=55: break
-            clone=dict(item); clone["source_id"]=f"curated-{pack}-{len(items)+1}"; clone["text"]=item["text"].replace("?",f" (раунд {len(items)+1})?")
+            clone=dict(item); clone["source_id"]=f"curated-{pack}-{len(items)+1}"
+            # The initial compact fact lists use a second, independently worded prompt
+            # instead of an identical question with a cosmetic round number.
+            stem=item["text"].rstrip("?.…")
+            prompts=(
+                "Выбери правильный ответ: {stem}.",
+                "Проверь этот факт и назови верный вариант: {stem}.",
+                "Какой вариант завершает утверждение: {stem}?",
+                "Мини-челлендж для знатока: {stem}.",
+            )
+            template=prompts[(len(items)//max(1,len(original))) % len(prompts)]
+            clone["text"]=template.format(stem=stem[:1].lower()+stem[1:])
             items.append(clone)
         for index, row in enumerate(items, 1):
             row["source_id"] = f"curated-{pack}-{index}"

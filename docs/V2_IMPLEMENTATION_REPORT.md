@@ -1,21 +1,46 @@
 # Quiz Battle MAX V2 implementation report
 
-## Before
+## Delivered local implementation
 
-The real baseline was a MAX text bot with 30 seed questions and seven regression tests.
+The baseline MAX text bot now has a Vite + React Mini App, a FastAPI game API,
+10 catalog packs, server-authoritative rounds, Daily, challenge codes, basic
+profile/leaderboard endpoints and a MAX text fallback. The production identity
+path accepts only validated MAX `initData`; browser identity is restricted to
+`ENV=development`.
 
-## Product changes
+The follow-up acceptance repair also fixed the V2 runtime path: a Quick game
+created with the legacy `general` category now draws from active catalog
+questions, and Daily creates its required seven-question round. The frontend
+uses the live profile, achievements, leaderboard, timer and answer-feedback
+endpoints rather than static figures.
 
-React Mini App now has a game-style Home, pack catalog, timed answer view, feedback, result/share view and bottom navigation. The bot retains the text fallback and links its «Играть» action to `MINI_APP_URL` when configured.
+## Verified locally on 2026-08-10
 
-## Architecture
+- `pytest -q`: 19 passed.
+- `python -m compileall -q .`: passed.
+- `frontend`: `npm run build` passed.
+- A clean SQLite database completed migrations, content bootstrap and API smoke:
+  10 packs, 550 active Russian questions, Quick = 5 and Daily = 7.
+- Server responses used by the player do not expose `correct_answer` or
+  `wrong_answers`.
 
-`frontend/` is Vite + React + TypeScript. `api.py` is FastAPI over the existing authoritative `db_manager`; it serves catalog, content stats, profile, game and answer endpoints. Production identity comes only from validated MAX `initData`; browser mock identity exists only under `ENV=development`.
+## Content status — release blocker
 
-## Content
+The corpus has 550 active Russian records and no exact duplicate texts,
+invalid options, placeholder distractors or missing explanations. It still has
+**218 near-duplicate question variants**. The audit now fails on that result,
+so the CI gate cannot falsely accept the corpus. Replacing those variants with
+editorially distinct, sourced questions is required before a public beta.
 
-Bootstrap installs **550 V2 RU records in 10 packs**; the legacy 30-record seed is retained but inactive. `python -m scripts.content.audit` is the acceptance gate.
+## Still outside the delivered scope
 
-## Known issues
+- Live Partner Cabinet registration, HTTPS deployment, MAX signed-initData and
+  two-user smoke have not been evidenced.
+- External-provider import adapters, automatic translation with review, and
+  media questions are not implemented.
+- Daily theme rotation, weekly missions, combo mechanics, a full achievement
+  taxonomy and challenge-completion notification are not implemented.
+- Docker Desktop was unavailable during local acceptance, therefore
+  `docker compose build` was not verified.
 
-Mini App Partner-Cabinet registration, HTTPS hosting and live MAX two-user smoke still require the owner. The current curated pack needs a second editorial pass to remove semantically repetitive variants before public rollout.
+See [V2_ACCEPTANCE_AUDIT.md](V2_ACCEPTANCE_AUDIT.md) for the requirement-by-requirement verdict.

@@ -11,8 +11,8 @@ Consumer beta with shared MAX and Telegram entries: one Mini App catalog, rounds
 
 - React Mini App (`frontend/`) с Home, каталогом из 10 packs, игровым экраном, результатом и sharing fallback.
 - FastAPI `/api/v1` для каталога, content stats, профиля и server-authoritative игр.
-- 550 V2 RU content records через `python -m scripts.content.bootstrap`; `python -m scripts.content.audit` требует не менее 500 active RU вопросов.
-- Quick Game на 5/10/15 вопросов с server-side scoring и speed bonus.
+- 550 V2 RU content records через `python -m scripts.content.bootstrap`; content audit блокирует exact и near-duplicate вопросы, поэтому текущий corpus ещё не готов к public beta.
+- Quick Game на 5/10/15/20 вопросов с server-side scoring и speed bonus; Daily всегда состоит из 7 вопросов.
 - Immutable question set: порядок и варианты ответа фиксируются при создании игры.
 - Correct answer не попадает в callback: клиент отправляет только `game_id`, позицию и выбранный индекс.
 - Idempotent callback: повторное нажатие не начисляет очки повторно.
@@ -69,9 +69,13 @@ Telegram: run `python telegram_bot.py` for the thin polling transport. It suppor
 
 ```powershell
 python -m compileall -q .
+python -m pip install -r requirements_test.txt
 pytest -q
+python -m scripts.content.audit # сейчас намеренно FAIL: 218 near-duplicates
 docker compose build
 ```
+
+Полный приёмочный статус и известные блокеры: [docs/V2_ACCEPTANCE_AUDIT.md](docs/V2_ACCEPTANCE_AUDIT.md).
 
 ## Структура
 

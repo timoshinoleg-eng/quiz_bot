@@ -48,9 +48,7 @@ quiz_bot.db
 bot.log
 logs/
 
-# Тесты
-test_*.py
-*_test.py
+# Test cache only. Test sources are product evidence and must be versioned.
 .pytest_cache/
 
 # Временные файлы

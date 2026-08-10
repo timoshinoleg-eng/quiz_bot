@@ -7,6 +7,7 @@ from urllib.parse import urlencode
 from api import public_game
 from content.packs.curated_ru import PACKS, build_questions
 from max_auth import MaxAuthError, validate_init_data
+from scripts.content.audit import normalise
 
 
 def signed_init_data(user_id=99):
@@ -26,6 +27,8 @@ def test_v2_curated_catalog_has_ten_packs_and_550_russian_records():
     rows=build_questions()
     assert len(PACKS)==10 and len(rows)==550
     assert all(len(row["wrong_answers"])==3 and row["correct_answer"] not in row["wrong_answers"] and row["explanation"] for row in rows)
+    texts=[normalise(row["text"]) for row in rows]
+    assert len(texts)==len(set(texts))
 
 
 def test_public_game_contract_never_serializes_answer_key():

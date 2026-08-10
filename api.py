@@ -1,26 +1,43 @@
 """FastAPI boundary for the Mini App; game rules stay in db_manager."""
 from __future__ import annotations
 import base64, hashlib, hmac, json, os, time
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from config import settings
-from db import db_manager, get_db, init_db
+from db import close_db, db_manager, get_db, init_db
 from max_auth import MaxAuthError, MaxIdentity, validate_init_data
 from telegram_auth import TelegramAuthError, TelegramIdentity, validate_init_data as validate_telegram_init_data
 from models import Question, QuizPack, UserQuestionHistory
 
-app = FastAPI(title="Quiz Battle API", version="2.1")
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    await init_db()
+    try:
+        yield
+    finally:
+        await close_db()
+
+
+app = FastAPI(title="Quiz Battle API", version="2.1", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:5173").split(","), allow_credentials=False, allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type", "X-Development-User"])
 class AuthPayload(BaseModel): init_data: str = Field(min_length=12)
 class NewGame(BaseModel):
-    pack_slug: str | None = None; category: str = "general"; difficulty: str = "medium"; question_count: int = Field(default=5, ge=5, le=20)
-class Answer(BaseModel): position: int = Field(ge=0); selected_index: int = Field(ge=0, le=3)
-def _session_key() -> bytes: return (os.getenv("APP_SESSION_SECRET") or settings.BOT.token).encode()
+    pack_slug: str | None = None
+    category: str = "general"
+    difficulty: str = "medium"
+    question_count: Literal[5, 10, 15, 20] = 5
+class Answer(BaseModel): position: int = Field(ge=0); selected_index: int = Field(ge=-1, le=3)
+def _session_key() -> bytes:
+    secret = os.getenv("APP_SESSION_SECRET")
+    if settings.ENV == "production" and not secret:
+        raise HTTPException(503, "APP_SESSION_SECRET is required in production")
+    return (secret or settings.BOT.token).encode()
 def _issue_session(user_id: int) -> str:
     body = base64.urlsafe_b64encode(json.dumps({"uid":user_id,"exp":int(time.time())+3600}, separators=(",", ":")).encode()).decode().rstrip("=")
     return body + "." + hmac.new(_session_key(), body.encode(), hashlib.sha256).hexdigest()
@@ -41,8 +58,6 @@ async def current_user(authorization: Annotated[str|None, Header()] = None, deve
 def public_game(game, rows) -> dict:
     current = next((row for row in rows if row.position == game.current_question_index), None)
     return {"id":game.id,"mode":game.mode,"status":game.status,"score":game.score,"correct_answers":game.correct_answers,"question_count":game.question_count,"current_question":None if not current else {"position":current.position,"text":current.question.text,"options":current.answer_options,"timeout_seconds":settings.GAME.answer_timeout}}
-@app.on_event("startup")
-async def startup(): await init_db()
 @app.get("/health")
 async def health(): return {"status":"ok", "service":"quiz-battle-api"}
 @app.post("/api/v1/auth/max")
@@ -116,8 +131,17 @@ async def me(user_id: int=Depends(current_user)):
 @app.get("/api/v1/me/progress")
 async def progress(user_id: int=Depends(current_user)):
     async with get_db() as db:
-        rows=(await db.execute(select(Question.category,func.count(UserQuestionHistory.id),func.coalesce(func.sum(UserQuestionHistory.times_correct),0)).join(UserQuestionHistory,UserQuestionHistory.question_id==Question.id).where(UserQuestionHistory.user_id==user_id).group_by(Question.category))).all()
-        return {"mastery":[{"category":category,"seen":seen,"correct":int(correct),"percent":min(100,round(100*int(correct)/max(1,seen)))} for category,seen,correct in rows]}
+        totals=dict((await db.execute(select(Question.category, func.count(Question.id)).where(Question.is_active.is_(True)).group_by(Question.category))).all())
+        rows=(await db.execute(select(Question.category,func.count(UserQuestionHistory.id),func.coalesce(func.sum(UserQuestionHistory.times_seen),0),func.coalesce(func.sum(UserQuestionHistory.times_correct),0)).join(UserQuestionHistory,UserQuestionHistory.question_id==Question.id).where(UserQuestionHistory.user_id==user_id).group_by(Question.category))).all()
+        mastery=[]
+        for category, unique_seen, attempts, correct in rows:
+            exposure=unique_seen/max(1,totals.get(category,0)); accuracy=int(correct)/max(1,int(attempts))
+            mastery.append({"category":category,"seen":unique_seen,"correct":int(correct),"percent":round(100*min(1,0.6*exposure+0.4*accuracy))})
+        return {"mastery":mastery}
+@app.get("/api/v1/me/achievements")
+async def achievements(user_id: int=Depends(current_user)):
+    user=await db_manager.get_or_create_user(user_id)
+    return {"items": user.achievements or []}
 @app.post("/api/v1/games")
 async def create_game(payload: NewGame,user_id: int=Depends(current_user)):
     await db_manager.get_or_create_user(user_id)
@@ -126,7 +150,7 @@ async def create_game(payload: NewGame,user_id: int=Depends(current_user)):
     return public_game(game,await db_manager.get_game_questions(game.id))
 @app.post("/api/v1/challenges")
 async def create_challenge(payload: NewGame, user_id: int = Depends(current_user)):
-    challenge, game = await db_manager.create_challenge(user_id, payload.category, payload.difficulty, 5)
+    challenge, game = await db_manager.create_challenge(user_id, payload.category, payload.difficulty, payload.question_count)
     await db_manager.log_event("challenge_create", user_id, {"challenge_id": challenge.id})
     return {"id": challenge.id, "code": challenge.code, "game": public_game(game, await db_manager.get_game_questions(game.id))}
 @app.post("/api/v1/challenges/{code}/join")
@@ -158,7 +182,7 @@ async def game(game_id:int,user_id:int=Depends(current_user)):
 async def answer(game_id:int,payload:Answer,user_id:int=Depends(current_user)):
     result=await db_manager.answer_game(game_id,user_id,payload.position,payload.selected_index)
     if not result.get("ok"): raise HTTPException(409,result.get("error","answer_failed"))
-    row=result["game"]; response={"correct":result.get("correct"),"points":result.get("points",0),"duplicate":result.get("duplicate",False),"game_over":result.get("game_over",False),"score":row.score,"lives_remaining":row.lives_remaining}
+    row=result["game"]; response={"correct":result.get("correct"),"points":result.get("points",0),"duplicate":result.get("duplicate",False),"game_over":result.get("game_over",False),"score":row.score,"correct_answers":row.correct_answers,"lives_remaining":row.lives_remaining}
     if not result.get("correct") and result.get("question"): response.update({"explanation":result["question"].question.explanation,"correct_answer":result.get("correct_answer")})
     if not response["game_over"]: response["next"]=public_game(row,await db_manager.get_game_questions(game_id))["current_question"]
     return response

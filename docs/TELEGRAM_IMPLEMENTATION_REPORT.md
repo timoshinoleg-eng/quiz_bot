@@ -39,3 +39,7 @@ The Telegram tests cover valid initData, forged user ID/signature, expired auth 
 5. Docker image build and MAX live regression smoke remain unavailable in this local environment.
 
 Manual test order: `/start` → Open App → Quick Game → another pack → Daily → create challenge → finish → share link → open it as account B → finish → inspect comparison/rematch → repeat in light/dark/mobile/desktop layouts.
+
+## Previous claims that were inaccurate / overstated
+
+The original report was superseded by the independent audit on 2026-08-10. Its “12 passed” claim was not reproducible from committed `HEAD` (only five tests were tracked); clean committed V2 content made Quick Game return HTTP 422 and Daily HTTP 500 because the selector required a nonexistent `general` category. “550 questions” was a count, not a quality acceptance: the clean audit found 90 exact and 164 fuzzy duplicates. The current working tree contains local remediation for the selector/test setup, but it remains dirty and the corpus still has fuzzy duplicates; see [TELEGRAM_REQUIREMENTS_AUDIT.md](TELEGRAM_REQUIREMENTS_AUDIT.md) and final acceptance for the current verdict.

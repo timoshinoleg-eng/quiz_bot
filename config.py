@@ -64,7 +64,7 @@ class GameConfig:
     question_options: tuple = (5, 10, 15, 20)
     points_correct: int = 100
     points_speed_bonus: int = 50
-    daily_question_count: int = 5
+    daily_question_count: int = 7
     challenge_question_count: int = 5
 
 
@@ -124,7 +124,7 @@ class Settings:
         self.GAME = GameConfig(
             answer_timeout=int(os.getenv("ANSWER_TIMEOUT", "30")),
             max_lives=int(os.getenv("MAX_LIVES", "3")),
-            daily_question_count=int(os.getenv("DAILY_QUESTION_COUNT", "5")),
+            daily_question_count=int(os.getenv("DAILY_QUESTION_COUNT", "7")),
             challenge_question_count=int(os.getenv("CHALLENGE_QUESTION_COUNT", "5"))
         )
         
