@@ -88,6 +88,25 @@ class User(Base):
     daily_results = relationship("DailyResult", back_populates="user")
     challenge_attempts = relationship("ChallengeAttempt", back_populates="user")
     question_history = relationship("UserQuestionHistory", back_populates="user", cascade="all, delete-orphan")
+    identities = relationship("PlatformIdentity", back_populates="user", cascade="all, delete-orphan")
+
+
+class PlatformIdentity(Base):
+    """A platform login pointing at one platform-neutral player record."""
+    __tablename__ = "platform_identities"
+    __table_args__ = (UniqueConstraint("platform", "external_user_id", name="uq_platform_external_user"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    platform = Column(String(16), nullable=False, index=True)
+    external_user_id = Column(String(64), nullable=False)
+    username = Column(String(255), nullable=True)
+    first_name = Column(String(255), nullable=True)
+    last_name = Column(String(255), nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    user = relationship("User", back_populates="identities")
 
 
 class Question(Base):

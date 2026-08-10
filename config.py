@@ -24,6 +24,14 @@ class BotConfig:
 
 
 @dataclass(frozen=True)
+class TelegramConfig:
+    token: str = ""
+    username: Optional[str] = None
+    webhook_url: Optional[str] = None
+    webhook_secret: Optional[str] = None
+
+
+@dataclass(frozen=True)
 class DatabaseConfig:
     """Конфигурация базы данных.
     
@@ -124,6 +132,12 @@ class Settings:
         self.FEATURES = FeatureFlags(
             enable_ads=os.getenv("ENABLE_ADS", "false").lower() == "true",
             enable_streaks=os.getenv("ENABLE_STREAKS", "true").lower() == "true"
+        )
+        self.TELEGRAM = TelegramConfig(
+            token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
+            username=os.getenv("TELEGRAM_BOT_USERNAME") or None,
+            webhook_url=os.getenv("TELEGRAM_WEBHOOK_URL") or None,
+            webhook_secret=os.getenv("TELEGRAM_WEBHOOK_SECRET") or None,
         )
         
         # Rate limiting

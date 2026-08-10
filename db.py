@@ -34,6 +34,7 @@ from models import (
     QuizPack,
     QuizPackQuestion,
     User,
+    PlatformIdentity,
     UserQuestionHistory,
 )
 
@@ -149,6 +150,36 @@ class DatabaseManager:
                     user.first_name = first_name
                 if last_name is not None:
                     user.last_name = last_name
+            return user
+
+    async def get_or_create_platform_user(self, platform: str, external_user_id: int | str,
+                                          username: Optional[str] = None, first_name: Optional[str] = None,
+                                          last_name: Optional[str] = None) -> User:
+        """Resolve a platform identity without conflating MAX and Telegram numeric IDs."""
+        if platform not in {"max", "telegram"}:
+            raise ValueError("unsupported platform")
+        external = str(external_user_id)
+        async with get_db() as db:
+            identity = await db.scalar(select(PlatformIdentity).where(
+                PlatformIdentity.platform == platform, PlatformIdentity.external_user_id == external))
+            if identity:
+                user = await db.get(User, identity.user_id)
+                identity.username, identity.first_name, identity.last_name = username, first_name, last_name
+                if user:
+                    user.username = username or user.username
+                    user.first_name = first_name or user.first_name
+                    user.last_name = last_name or user.last_name
+                    return user
+            # Old MAX rows used the external ID as their user ID. Preserve that compatibility;
+            # Telegram IDs are mapped to a deterministic negative core ID to avoid collisions.
+            core_id = int(external) if platform == "max" else -(int(external) + 1)
+            user = await db.get(User, core_id)
+            if user is None:
+                user = User(id=core_id, username=username, first_name=first_name, last_name=last_name)
+                db.add(user)
+                await db.flush()
+            db.add(PlatformIdentity(user_id=user.id, platform=platform, external_user_id=external,
+                                    username=username, first_name=first_name, last_name=last_name))
             return user
 
     async def get_user(self, user_id: int) -> Optional[User]:

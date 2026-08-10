@@ -11,17 +11,18 @@ from sqlalchemy import func, select
 from config import settings
 from db import db_manager, get_db, init_db
 from max_auth import MaxAuthError, MaxIdentity, validate_init_data
+from telegram_auth import TelegramAuthError, TelegramIdentity, validate_init_data as validate_telegram_init_data
 from models import Question, QuizPack, UserQuestionHistory
 
-app = FastAPI(title="Quiz Battle MAX API", version="2.0")
+app = FastAPI(title="Quiz Battle API", version="2.1")
 app.add_middleware(CORSMiddleware, allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:5173").split(","), allow_credentials=False, allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type", "X-Development-User"])
 class AuthPayload(BaseModel): init_data: str = Field(min_length=12)
 class NewGame(BaseModel):
     pack_slug: str | None = None; category: str = "general"; difficulty: str = "medium"; question_count: int = Field(default=5, ge=5, le=20)
 class Answer(BaseModel): position: int = Field(ge=0); selected_index: int = Field(ge=0, le=3)
 def _session_key() -> bytes: return (os.getenv("APP_SESSION_SECRET") or settings.BOT.token).encode()
-def _issue_session(identity: MaxIdentity) -> str:
-    body = base64.urlsafe_b64encode(json.dumps({"uid":identity.user_id,"exp":int(time.time())+3600}, separators=(",", ":")).encode()).decode().rstrip("=")
+def _issue_session(user_id: int) -> str:
+    body = base64.urlsafe_b64encode(json.dumps({"uid":user_id,"exp":int(time.time())+3600}, separators=(",", ":")).encode()).decode().rstrip("=")
     return body + "." + hmac.new(_session_key(), body.encode(), hashlib.sha256).hexdigest()
 def _read_session(token: str) -> int:
     try:
@@ -48,8 +49,26 @@ async def health(): return {"status":"ok", "service":"quiz-battle-api"}
 async def auth_max(payload: AuthPayload):
     try: identity = validate_init_data(payload.init_data, settings.BOT.token)
     except MaxAuthError as error: raise HTTPException(401, str(error))
-    await db_manager.get_or_create_user(identity.user_id, identity.username, identity.first_name, identity.last_name)
-    return {"access_token":_issue_session(identity), "token_type":"bearer", "expires_in":3600}
+    user = await db_manager.get_or_create_platform_user("max", identity.user_id, identity.username, identity.first_name, identity.last_name)
+    return {"access_token":_issue_session(user.id), "token_type":"bearer", "expires_in":3600}
+@app.post("/api/v1/auth/telegram")
+async def auth_telegram(payload: AuthPayload):
+    if not settings.TELEGRAM.token:
+        raise HTTPException(503, "Telegram is not configured")
+    try: identity = validate_telegram_init_data(payload.init_data, settings.TELEGRAM.token)
+    except TelegramAuthError as error: raise HTTPException(401, str(error))
+    user = await db_manager.get_or_create_platform_user("telegram", identity.external_user_id, identity.username, identity.first_name, identity.last_name)
+    await db_manager.log_event("app_open", user.id, {"platform": "telegram"})
+    return {"access_token":_issue_session(user.id), "token_type":"bearer", "expires_in":3600}
+@app.post("/telegram/webhook")
+async def telegram_webhook(update: dict, secret: Annotated[str|None, Header(alias="X-Telegram-Bot-Api-Secret-Token")] = None):
+    if not settings.TELEGRAM.token or not settings.TELEGRAM.webhook_secret:
+        raise HTTPException(503, "Telegram webhook is not configured")
+    if not hmac.compare_digest(secret or "", settings.TELEGRAM.webhook_secret):
+        raise HTTPException(401, "Invalid Telegram webhook secret")
+    from telegram_bot import TelegramBot
+    await TelegramBot(settings.TELEGRAM.token, settings.MINI_APP_URL).handle_update(update)
+    return {"ok": True}
 @app.get("/api/v1/quizzes")
 async def quizzes(language: str="ru", featured: bool|None=None, age: int|None=None, category: str|None=None):
     async with get_db() as db:
@@ -83,6 +102,14 @@ async def content_stats():
 @app.get("/api/v1/daily")
 async def daily():
     challenge=await db_manager.ensure_daily_challenge(question_count=7); return {"date":challenge.challenge_date.isoformat(),"question_count":challenge.question_count,"title":"Квиз дня"}
+@app.post("/api/v1/daily/games")
+async def start_daily(user_id: int = Depends(current_user)):
+    try: game = await db_manager.create_daily_game(user_id)
+    except Exception as error:
+        if error.__class__.__name__ == "DailyAlreadyPlayed":
+            raise HTTPException(409, {"error": "daily_already_played", "game_id": error.game_id})
+        raise
+    return public_game(game, await db_manager.get_game_questions(game.id))
 @app.get("/api/v1/me")
 async def me(user_id: int=Depends(current_user)):
     user=await db_manager.get_or_create_user(user_id); return {"id":user.id,"name":user.first_name or user.username or "Игрок","xp":user.xp,"level":user.level,"streak":user.daily_streak,"achievements":user.achievements or []}
@@ -97,6 +124,31 @@ async def create_game(payload: NewGame,user_id: int=Depends(current_user)):
     try: game=await db_manager.create_game(user_id,payload.category,payload.difficulty,payload.question_count,pack_slug=payload.pack_slug)
     except ValueError as error: raise HTTPException(422,str(error))
     return public_game(game,await db_manager.get_game_questions(game.id))
+@app.post("/api/v1/challenges")
+async def create_challenge(payload: NewGame, user_id: int = Depends(current_user)):
+    challenge, game = await db_manager.create_challenge(user_id, payload.category, payload.difficulty, 5)
+    await db_manager.log_event("challenge_create", user_id, {"challenge_id": challenge.id})
+    return {"id": challenge.id, "code": challenge.code, "game": public_game(game, await db_manager.get_game_questions(game.id))}
+@app.post("/api/v1/challenges/{code}/join")
+async def join_challenge(code: str, user_id: int = Depends(current_user)):
+    try: game = await db_manager.join_challenge(code, user_id)
+    except Exception as error:
+        if error.__class__.__name__ == "ChallengeError": raise HTTPException(409, str(error))
+        raise
+    await db_manager.log_event("challenge_join", user_id, {"code": code})
+    return public_game(game, await db_manager.get_game_questions(game.id))
+@app.get("/api/v1/challenges/{challenge_id}")
+async def challenge_summary(challenge_id: int, user_id: int = Depends(current_user)):
+    result = await db_manager.get_challenge_summary(challenge_id)
+    if not result["found"]: raise HTTPException(404, "Challenge not found")
+    challenge = result["challenge"]
+    if user_id not in {challenge.creator_id, challenge.opponent_id}: raise HTTPException(404, "Challenge not found")
+    return {"id": challenge.id, "code": challenge.code, "finished": result["finished"], "attempts": [
+        {"user_id": attempt.user_id, "score": attempt.score, "correct_answers": attempt.correct_answers, "completed": attempt.completed_at is not None}
+        for attempt in result["attempts"]]}
+@app.get("/api/v1/leaderboard")
+async def leaderboard(limit: int = 10):
+    return {"items": await db_manager.get_weekly_leaderboard(min(max(limit, 1), 50))}
 @app.get("/api/v1/games/{game_id}")
 async def game(game_id:int,user_id:int=Depends(current_user)):
     row=await db_manager.get_game(game_id)

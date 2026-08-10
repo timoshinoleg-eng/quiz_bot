@@ -1,6 +1,11 @@
-# Quiz Battle MAX
+# Quiz Battle
 
-Consumer beta Quiz Battle MAX: Mini App-каталог, короткие раунды, Daily, вызовы, XP, streak и рейтинг.
+Consumer beta with shared MAX and Telegram entries: one Mini App catalog, rounds, Daily, challenges, XP, streak and leaderboard.
+
+## Platforms
+
+- ✅ MAX
+- ✅ Telegram Mini App/backend transport (BotFather URL, HTTPS webhook and two-account live smoke remain deployment gates)
 
 ## Реализовано
 
@@ -44,7 +49,9 @@ Copy-Item .env.example .env
 
 ## Команды
 
-`/start` — меню; `/daily` — вопрос дня; `/play` — быстрая игра; `/challenge` — создать вызов; `/join CODE` — принять вызов; `/stats` — профиль; `/leaderboard` — рейтинг.
+MAX: `/start` — меню; `/daily` — вопрос дня; `/play` — быстрая игра; `/challenge` — создать вызов; `/join CODE` — принять вызов; `/stats` — профиль; `/leaderboard` — рейтинг.
+
+Telegram: run `python telegram_bot.py` for the thin polling transport. It supports `/start`, `/play`, `/daily`, `/challenge`, `/profile`, `/leaderboard`, `/help`; setup is in [docs/TELEGRAM_SETUP.md](docs/TELEGRAM_SETUP.md).
 
 ## MAX API
 
