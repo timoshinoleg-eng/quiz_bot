@@ -1,4 +1,4 @@
-"""Replace the local quiz catalogue with the audited fourth-grade corpus."""
+"""Replace the local quiz catalogue with the approved fourth-grade corpus."""
 from __future__ import annotations
 
 import asyncio

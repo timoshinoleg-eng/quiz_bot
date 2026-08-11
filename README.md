@@ -86,6 +86,7 @@ docker compose build
 - `db.py` — persistent game operations, idempotency, Daily и challenges.
 - `models.py` — SQLAlchemy schema.
 - `services/` — game facade, Daily, challenges, profile.
-- `content/packs/grade4_audited_v2.json` — активный проверенный набор из 500 вопросов для 4 класса.
+- `content/quiz_grade4.json` — утверждённый набор: 492 core + 8 starred вопросов для 4 класса.
+- `content/visual_plan_grade4.json` — утверждённый план: 74 visual первой волны, 32 резерва и 73 текстовых задания.
 - `tests/test_grade4_content.py` — проверка состава и атомарной замены каталога.
 - `docs/BETA_IMPLEMENTATION_REPORT.md` — отчёт и ручной checklist.
