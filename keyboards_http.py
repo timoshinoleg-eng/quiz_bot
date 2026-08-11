@@ -10,7 +10,12 @@ CATEGORY_EMOJIS = {
     'ART': '🎨',
     'SPORT': '⚽',
     'ENTERTAINMENT': '🎬',
-    'GENERAL': '❓'
+    'GENERAL': '❓',
+    'RUSSIAN': '📝',
+    'MATH': '➗',
+    'LITERATURE': '📚',
+    'WORLD': '🌍',
+    'ENGLISH': '🇬🇧',
 }
 
 # === ЭМОДЗИ ДЛЯ СЛОЖНОСТИ ===
@@ -284,18 +289,17 @@ def get_topics_keyboard_http() -> List[List[Dict[str, str]]]:
     """Улучшенный выбор темы с эмодзи."""
     return KeyboardFactory.keyboard(
         KeyboardFactory.row(
-            KeyboardFactory.callback_button(f"{CATEGORY_EMOJIS['HISTORY']} История", "topic:history"),
-            KeyboardFactory.callback_button(f"{CATEGORY_EMOJIS['SCIENCE']} Наука", "topic:science")
+            KeyboardFactory.callback_button(f"{CATEGORY_EMOJIS['RUSSIAN']} Русский язык", "topic:russian"),
+            KeyboardFactory.callback_button(f"{CATEGORY_EMOJIS['MATH']} Математика", "topic:math")
         ),
         KeyboardFactory.row(
-            KeyboardFactory.callback_button(f"{CATEGORY_EMOJIS['SPORT']} Спорт", "topic:sport"),
-            KeyboardFactory.callback_button(f"{CATEGORY_EMOJIS['GEOGRAPHY']} География", "topic:geography")
+            KeyboardFactory.callback_button(f"{CATEGORY_EMOJIS['LITERATURE']} Литература", "topic:literature"),
+            KeyboardFactory.callback_button(f"{CATEGORY_EMOJIS['WORLD']} Окружающий мир", "topic:world")
         ),
         KeyboardFactory.row(
-            KeyboardFactory.callback_button(f"{CATEGORY_EMOJIS['ART']} Искусство", "topic:art"),
-            KeyboardFactory.callback_button(f"{CATEGORY_EMOJIS['ENTERTAINMENT']} Развлечения", "topic:entertainment")
+            KeyboardFactory.callback_button(f"{CATEGORY_EMOJIS['ENGLISH']} Английский", "topic:english"),
+            KeyboardFactory.callback_button(f"{CATEGORY_EMOJIS['GENERAL']} Все предметы", "topic:general")
         ),
-        KeyboardFactory.row(KeyboardFactory.callback_button(f"{CATEGORY_EMOJIS['GENERAL']} Общие", "topic:general")),
         KeyboardFactory.row(
             KeyboardFactory.callback_button("⬅️ Назад", "topic:back")
         ),

@@ -7,8 +7,8 @@ reported separately.
 | Area | Verdict | Evidence / gap |
 | --- | --- | --- |
 | Mini App, responsive game UI and MAX text fallback | PARTIAL | React build passes; Home, catalog, game, feedback, result and bottom navigation are implemented. No live MAX visual or device smoke was available. |
-| Catalog of 10 packs | PASS | Clean bootstrap produced 10 non-empty packs, 55 active questions each. |
-| 500+ active Russian questions | PASS (local) | Clean bootstrap produces 550 active RU records in ten packs of 55. Audit reports exact 0, fuzzy 0, invalid 0 and missing provenance 0. |
+| Catalog of 5 subject packs | PASS | Replacement bootstrap produced five non-empty fourth-grade subject packs, 100 active questions each. |
+| 500 active Russian questions | PASS (local) | Replacement bootstrap produces 500 active RU records for ages 10–11. Audit reports exact 0, fuzzy 0, invalid 0 and missing provenance 0. |
 | Correct answers and answer validation | PASS | Authoritative database check and API smoke confirm the player response does not include answer keys. Duplicate callbacks remain idempotent. |
 | Quick Game and question selection | PASS | Regression covers a no-`general` catalog: Quick returns five active questions. The user may select 5/10/15/20. |
 | Daily Challenge | PASS | Regression/API smoke confirms exactly seven questions, one daily game policy, streak and leaderboard service paths. |
@@ -31,8 +31,8 @@ reported separately.
 3. The frontend now uses live profile, achievement and leaderboard data, has a
    working timer/timeout, and preserves answer totals between questions.
 4. The production session signer now fails closed without `APP_SESSION_SECRET`.
-5. The 218 former near-duplicate content variants were replaced with distinct
-   sourced records; bootstrap/audit now passes on a clean active corpus.
+5. The former catalogue was replaced with 500 distinct fourth-grade questions;
+   bootstrap/audit now passes on the active corpus.
 6. Production preflight, Caddy HTTPS proxy, registry-to-VM deployment scripts
    and GitVerse workflows were added and validated locally.
 

@@ -5,7 +5,7 @@ import time
 from urllib.parse import urlencode
 
 from api import public_game
-from content.packs.curated_ru import PACKS, build_questions
+from scripts.content.grade4_audited_v2 import load_questions
 from max_auth import MaxAuthError, validate_init_data
 from scripts.content.audit import normalise
 
@@ -23,11 +23,16 @@ def test_max_init_data_validation_is_signed_and_expiring():
     with __import__("pytest").raises(MaxAuthError): validate_init_data(signed_init_data(),"wrong-token")
 
 
-def test_v2_curated_catalog_has_ten_packs_and_550_russian_records():
-    rows=build_questions()
-    assert len(PACKS)==10 and len(rows)==550
-    assert all(len(row["wrong_answers"])==3 and row["correct_answer"] not in row["wrong_answers"] and row["explanation"] for row in rows)
-    texts=[normalise(row["text"]) for row in rows]
+def test_v2_catalog_has_500_audited_fourth_grade_records():
+    rows=load_questions()
+    assert len(rows)==500
+    assert {row["subject"] for row in rows} == {"Русский язык", "Математика", "Литературное чтение", "Окружающий мир", "Английский язык"}
+    assert all(
+        sum(row["correct_answer"] == option for option in [row["option_a"], row["option_b"], row["option_c"], row["option_d"]]) == 1
+        for row in rows
+    )
+    assert all(row["explanation"] and row["source_url"] for row in rows)
+    texts=[normalise(row["question"]) for row in rows]
     assert len(texts)==len(set(texts))
 
 

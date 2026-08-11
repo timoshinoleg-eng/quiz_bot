@@ -28,10 +28,16 @@ def fuzzy_duplicate_count(questions: list[Question]) -> int:
     answers = [normalise(question.correct_answer) for question in questions]
     option_sets = [frozenset(normalise(value) for value in [question.correct_answer, *(question.wrong_answers or [])]) for question in questions]
     token_sets = [set(text.split()) for text in texts]
+    quoted_entities = [set(re.findall(r"«([^»]+)»", question.text.casefold())) for question in questions]
     count = 0
     for index, text in enumerate(texts):
         for previous, other in enumerate(texts[:index]):
             if text == other or len(token_sets[index] & token_sets[previous]) < 3:
+                continue
+            # Reused classroom wording can intentionally ask about different,
+            # explicitly named works or terms. Those are distinct facts even
+            # when the author/answer options happen to coincide.
+            if quoted_entities[index] and quoted_entities[previous] and quoted_entities[index] != quoted_entities[previous]:
                 continue
             if answers[index] != answers[previous] and option_sets[index] != option_sets[previous]:
                 continue

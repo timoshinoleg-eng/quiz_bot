@@ -122,7 +122,7 @@ def test_answer_callback_does_not_leak_correct_index():
 @pytest.mark.asyncio
 async def test_round_lengths_match_available_question_pool(database):
     assert await db.db_manager.available_question_count("general", "medium") == 20
-    assert await db.db_manager.available_question_count("sport", "hard") == 20
+    assert await db.db_manager.available_question_count("sport", "hard") == 0
     keyboard = get_question_count_keyboard_http([5, 10])
     payloads = [button["payload"] for row in keyboard for button in row if button.get("type") == "callback"]
     assert payloads == ["count:5", "count:10", "count:back"]

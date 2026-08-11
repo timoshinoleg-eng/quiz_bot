@@ -244,7 +244,7 @@ class DatabaseManager:
             row[1].last_seen_at if row[1] and row[1].last_seen_at else datetime.min,
         ))
         questions = [row[0] for row in rows[:count]]
-        if len(questions) < count:
+        if len(questions) < count and not pack_slug and category_value == QuestionCategory.GENERAL.value:
             fallback = (
                 select(Question)
                 .where(Question.is_active.is_(True))
@@ -270,13 +270,13 @@ class DatabaseManager:
                 .where(Question.difficulty == difficulty_value)
             )
             if category_value == QuestionCategory.GENERAL.value:
-                return int(exact_count or 0)
-            fallback_count = await db.scalar(
-                select(func.count(Question.id))
-                .where(Question.is_active.is_(True))
-                .where(Question.category == QuestionCategory.GENERAL.value)
-            )
-            return int(exact_count or 0) + int(fallback_count or 0)
+                all_active = await db.scalar(
+                    select(func.count(Question.id))
+                    .where(Question.is_active.is_(True))
+                    .where(Question.difficulty == difficulty_value)
+                )
+                return int(all_active or 0)
+            return int(exact_count or 0)
 
     async def _new_game(self, db: AsyncSession, user_id: int, category: Any, difficulty: Any,
                         question_count: int, mode: Any = GameMode.SOLO, daily_date: Optional[date] = None,

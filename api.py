@@ -121,7 +121,7 @@ async def quizzes(language: str="ru", featured: bool|None=None, age: int|None=No
         items=[]
         for pack in packs:
             rows=(await db.execute(select(Question.difficulty,func.count(Question.id)).join(Question.packs).where(QuizPack.id==pack.id,Question.is_active.is_(True)).group_by(Question.difficulty))).all(); difficulty={level:count for level,count in rows}
-            items.append({"slug":pack.slug,"title":pack.title,"emoji":pack.emoji,"description":pack.short_description,"question_count":sum(difficulty.values()),"estimated_minutes":pack.estimated_minutes,"age_min":pack.age_min,"age_max":pack.age_max,"featured":pack.featured,"difficulty":difficulty})
+            items.append({"slug":pack.slug,"title":pack.title,"emoji":pack.emoji,"description":pack.short_description,"category":pack.category,"question_count":sum(difficulty.values()),"estimated_minutes":pack.estimated_minutes,"age_min":pack.age_min,"age_max":pack.age_max,"featured":pack.featured,"difficulty":difficulty})
         return {"items":items}
 @app.get("/api/v1/quizzes/{slug}")
 async def quiz(slug: str):

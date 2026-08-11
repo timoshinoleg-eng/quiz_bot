@@ -42,6 +42,11 @@ class QuestionCategory(str, enum.Enum):
     GEOGRAPHY = "geography"
     ENTERTAINMENT = "entertainment"
     GENERAL = "general"
+    RUSSIAN = "russian"
+    MATH = "math"
+    LITERATURE = "literature"
+    WORLD = "world"
+    ENGLISH = "english"
 
 
 class GameMode(str, enum.Enum):

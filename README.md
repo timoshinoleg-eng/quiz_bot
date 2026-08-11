@@ -9,9 +9,9 @@ Consumer beta with shared MAX and Telegram entries: one Mini App catalog, rounds
 
 ## Реализовано
 
-- React Mini App (`frontend/`) с Home, каталогом из 10 packs, игровым экраном, результатом и sharing fallback.
+- React Mini App (`frontend/`) с Home, каталогом из 5 предметных наборов для 4 класса, игровым экраном, результатом и sharing fallback.
 - FastAPI `/api/v1` для каталога, content stats, профиля и server-authoritative игр.
-- 550 V2 RU content records в 10 packs по 55 вопросов через `python -m scripts.content.bootstrap`; локальный audit блокирует exact/semantic duplicates, пустую provenance и шаблонные distractors.
+- 500 проверенных вопросов для 4 класса (10–11 лет): по 100 для русского языка, математики, литературного чтения, окружающего мира и английского. `python -m scripts.content.bootstrap` атомарно заменяет прежний банк; audit блокирует дубликаты, пустую provenance и некорректные варианты.
 - Quick Game на 5/10/15/20 вопросов с server-side scoring и speed bonus; Daily всегда состоит из 7 вопросов.
 - Immutable question set: порядок и варианты ответа фиксируются при создании игры.
 - Correct answer не попадает в callback: клиент отправляет только `game_id`, позицию и выбранный индекс.
@@ -86,6 +86,6 @@ docker compose build
 - `db.py` — persistent game operations, idempotency, Daily и challenges.
 - `models.py` — SQLAlchemy schema.
 - `services/` — game facade, Daily, challenges, profile.
-- `content/beta_seed.json` — небольшой проверенный seed.
-- `tests/test_beta.py` — acceptance-регрессия beta.
+- `content/packs/grade4_audited_v2.json` — активный проверенный набор из 500 вопросов для 4 класса.
+- `tests/test_grade4_content.py` — проверка состава и атомарной замены каталога.
 - `docs/BETA_IMPLEMENTATION_REPORT.md` — отчёт и ручной checklist.
