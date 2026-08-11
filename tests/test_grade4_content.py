@@ -15,6 +15,7 @@ from scripts.content.grade4_audited_v2 import (
     SOURCE,
     TEXT_ACTION,
     load_questions,
+    load_visual_assets,
     load_visual_plan,
     replace_content,
     sync_approved_metadata,
@@ -53,6 +54,22 @@ def test_approved_visual_plan_matches_questions_without_changing_answers():
     )
 
 
+def test_visual_asset_manifest_uses_question_id_and_files_exist():
+    assets = load_visual_assets(load_questions())
+    assert assets == {
+        172: "images/172_math_geometry_circle_boundary.png",
+        174: "images/174_math_geometry_square_7cm_playground.png",
+        175: "images/175_math_geometry_room_plan_9x4.png",
+        178: "images/178_math_geometry_ball_shape.png",
+        179: "images/179_math_geometry_can_shape.png",
+        199: "images/199_math_data_library_table.png",
+        200: "images/200_math_data_chips_chart.png",
+        304: "images/304_world_solar_system_planets_order.png",
+        314: "images/314_world_seasons_earth_sun.png",
+        462: "images/462_english_prepositions_book_on_table.png",
+    }
+
+
 def test_fuzzy_audit_keeps_distinct_quoted_entities():
     first = Question(text="Кто написал «Детство»?", category="literature", difficulty="medium", correct_answer="Л. Н. Толстой", wrong_answers=["А", "Б", "В"])
     second = Question(text="Кто написал «Черепаха»?", category="literature", difficulty="medium", correct_answer="Л. Н. Толстой", wrong_answers=["А", "Б", "В"])
@@ -89,11 +106,14 @@ async def test_approved_metadata_sync_preserves_answers_and_user_progress(databa
         session.add(User(id=91, xp=321, games_played=4, achievements=["first_game"]))
 
     result = await sync_approved_metadata()
-    assert result == {"updated_questions": 500, "visual_first_wave": 74, "visual_second_wave": 32, "text_only": 73}
+    assert result == {"updated_questions": 500, "visual_first_wave": 74, "visual_second_wave": 32, "text_only": 73, "visual_assets": 10}
     async with db.get_db() as session:
         question = await session.scalar(select(Question).where(Question.source_id == "grade4-001"))
         user = await session.get(User, 91)
         assert question is not None
         assert question.correct_answer == original_answer and question.wrong_answers == original_wrong
         assert "visual:mode:text" in question.tags and "media:none" in question.tags
+        visual_question = await session.scalar(select(Question).where(Question.source_id == "grade4-172"))
+        assert visual_question is not None
+        assert "visual:asset:/quiz-media/images/172_math_geometry_circle_boundary.png" in visual_question.tags
         assert user is not None and user.xp == 321 and user.games_played == 4 and user.achievements == ["first_game"]

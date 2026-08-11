@@ -37,10 +37,11 @@ def test_v2_catalog_has_500_audited_fourth_grade_records():
 
 
 def test_public_game_contract_never_serializes_answer_key():
-    question=type("Question",(),{"text":"Вопрос","correct_answer":"Секрет"})()
+    question=type("Question",(),{"text":"Вопрос","correct_answer":"Секрет","tags":["visual:asset:/quiz-media/images/172_math_geometry_circle_boundary.png"]})()
     row=type("GameQuestion",(),{"position":0,"question":question,"answer_options":["A","B","C","D"],"correct_index":2})()
     game=type("Game",(),{"id":1,"mode":"solo","status":"in_progress","score":0,"correct_answers":0,"question_count":5,"current_question_index":0})()
     payload=public_game(game,[row])
     rendered=json.dumps(payload,ensure_ascii=False)
     assert "Секрет" not in rendered
     assert {"correct_index", "correct_answer"}.isdisjoint(payload.keys() | payload["current_question"].keys())
+    assert payload["current_question"]["image_url"] == "/quiz-media/images/172_math_geometry_circle_boundary.png"

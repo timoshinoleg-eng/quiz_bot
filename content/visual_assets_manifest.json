@@ -1,0 +1,77 @@
+{
+  "package_name": "quiz_visual_pack_v1",
+  "description": "10 generated images for approved grade 4 quiz questions with explicit mapping to question IDs.",
+  "total_images": 10,
+  "items": [
+    {
+      "question_id": 172,
+      "subject": "Математика",
+      "topic": "Геометрия",
+      "question": "На рисунке закрашен круг. Как называется линия, которая ограничивает его?",
+      "filename": "images/172_math_geometry_circle_boundary.png"
+    },
+    {
+      "question_id": 174,
+      "subject": "Математика",
+      "topic": "Геометрия",
+      "question": "В игре нужно поставить забор по границе квадратной площадки со стороной 7 см на плане. Каков её периметр?",
+      "filename": "images/174_math_geometry_square_7cm_playground.png"
+    },
+    {
+      "question_id": 175,
+      "subject": "Математика",
+      "topic": "Геометрия",
+      "question": "План комнаты — прямоугольник 9 см × 4 см. Какова его площадь на плане?",
+      "filename": "images/175_math_geometry_room_plan_9x4.png"
+    },
+    {
+      "question_id": 178,
+      "subject": "Математика",
+      "topic": "Геометрия",
+      "question": "Какое геометрическое тело лучше всего описывает форму мяча?",
+      "filename": "images/178_math_geometry_ball_shape.png"
+    },
+    {
+      "question_id": 179,
+      "subject": "Математика",
+      "topic": "Геометрия",
+      "question": "Какое геометрическое тело больше всего похоже на обычную консервную банку?",
+      "filename": "images/179_math_geometry_can_shape.png"
+    },
+    {
+      "question_id": 199,
+      "subject": "Математика",
+      "topic": "Уравнения и математическая информация",
+      "question": "В библиотечной таблице: понедельник — 12 книг, вторник — 18, среда — 15. В какой день взяли больше всего?",
+      "filename": "images/199_math_data_library_table.png"
+    },
+    {
+      "question_id": 200,
+      "subject": "Математика",
+      "topic": "Уравнения и математическая информация",
+      "question": "На диаграмме: красных фишек 8, синих 12, зелёных 5. На сколько синих фишек больше, чем зелёных?",
+      "filename": "images/200_math_data_chips_chart.png"
+    },
+    {
+      "question_id": 304,
+      "subject": "Окружающий мир",
+      "topic": "Солнечная система и Земля",
+      "question": "Расположи планеты от Солнца. Какая стоит на третьем месте?",
+      "filename": "images/304_world_solar_system_planets_order.png"
+    },
+    {
+      "question_id": 314,
+      "subject": "Окружающий мир",
+      "topic": "Солнечная система и Земля",
+      "question": "Почему летом и зимой Солнце по-разному освещает Землю и меняются времена года?",
+      "filename": "images/314_world_seasons_earth_sun.png"
+    },
+    {
+      "question_id": 462,
+      "subject": "Английский язык",
+      "topic": "Предлоги места",
+      "question": "На рисунке книга лежит на столе: “The book is ___ the table.”",
+      "filename": "images/462_english_prepositions_book_on_table.png"
+    }
+  ]
+}

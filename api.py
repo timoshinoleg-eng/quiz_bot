@@ -75,7 +75,14 @@ async def current_user(authorization: Annotated[str|None, Header()] = None, deve
     return _read_session(authorization[7:])
 def public_game(game, rows) -> dict:
     current = next((row for row in rows if row.position == game.current_question_index), None)
-    return {"id":game.id,"mode":game.mode,"status":game.status,"score":game.score,"correct_answers":game.correct_answers,"question_count":game.question_count,"current_question":None if not current else {"position":current.position,"text":current.question.text,"options":current.answer_options,"timeout_seconds":settings.GAME.answer_timeout}}
+    if current is None:
+        question = None
+    else:
+        question = {"position":current.position,"text":current.question.text,"options":current.answer_options,"timeout_seconds":settings.GAME.answer_timeout}
+        image_url = next((tag.removeprefix("visual:asset:") for tag in (getattr(current.question, "tags", None) or []) if tag.startswith("visual:asset:/")), None)
+        if image_url:
+            question["image_url"] = image_url
+    return {"id":game.id,"mode":game.mode,"status":game.status,"score":game.score,"correct_answers":game.correct_answers,"question_count":game.question_count,"current_question":question}
 @app.get("/health")
 async def health(): return {"status":"ok", "service":"quiz-battle-api"}
 @app.get("/ready")

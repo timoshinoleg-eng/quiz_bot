@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from sqlalchemy import delete, func, select, update
 
@@ -28,6 +28,8 @@ from models import (
 CONTENT_DIR = Path(__file__).resolve().parents[2] / "content"
 CORPUS_PATH = CONTENT_DIR / "quiz_grade4.json"
 VISUAL_PLAN_PATH = CONTENT_DIR / "visual_plan_grade4.json"
+VISUAL_ASSET_MANIFEST_PATH = CONTENT_DIR / "visual_assets_manifest.json"
+STATIC_MEDIA_ROOT = Path(__file__).resolve().parents[2] / "frontend" / "public" / "quiz-media"
 SOURCE = "quiz_grade4_core_plus_starred_v1"
 SOURCE_LICENSE = "Source URLs recorded; rights not verified"
 
@@ -142,8 +144,34 @@ def load_visual_plan(questions: list[dict], path: Path = VISUAL_PLAN_PATH) -> di
     return plan_by_id
 
 
-def question_tags(row: dict, visual_plan: dict[int, dict]) -> list[str]:
-    """Return non-answer metadata; image assets remain absent until supplied separately."""
+def load_visual_assets(questions: list[dict], path: Path = VISUAL_ASSET_MANIFEST_PATH, static_root: Path = STATIC_MEDIA_ROOT) -> dict[int, str]:
+    """Read the exact question_id-to-file mapping from the supplied manifest."""
+    payload = _read_json(path)
+    items = payload.get("items")
+    if payload.get("package_name") != "quiz_visual_pack_v1" or payload.get("total_images") != 10 or not isinstance(items, list) or len(items) != 10:
+        raise ValueError("Expected the supplied quiz visual-pack manifest")
+    valid_question_ids = {row["id"] for row in questions}
+    assets: dict[int, str] = {}
+    for item in items:
+        question_id, filename = item.get("question_id"), item.get("filename")
+        if not isinstance(question_id, int) or question_id not in valid_question_ids or question_id in assets or not isinstance(filename, str):
+            raise ValueError("Visual asset manifest must use unique approved question_id values")
+        relative_path = PurePosixPath(filename)
+        if (
+            relative_path.is_absolute()
+            or ".." in relative_path.parts
+            or relative_path.parts[:1] != ("images",)
+            or relative_path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}
+        ):
+            raise ValueError(f"Unsafe visual asset path for question {question_id}")
+        if not static_root.joinpath(*relative_path.parts).is_file():
+            raise ValueError(f"Visual asset is missing for question {question_id}")
+        assets[question_id] = filename
+    return assets
+
+
+def question_tags(row: dict, visual_plan: dict[int, dict], visual_assets: dict[int, str]) -> list[str]:
+    """Return non-answer metadata, including only manifest-defined asset bindings."""
     plan = visual_plan.get(row["id"])
     if plan is None:
         media_type, visual_mode = "none", "not_planned"
@@ -165,6 +193,8 @@ def question_tags(row: dict, visual_plan: dict[int, dict]) -> list[str]:
         tags.extend((f"visual:priority:{plan['priority']}", f"visual:type:{plan['recommended_visual_type']}"))
     if row.get("star_reason"):
         tags.append("content:starred")
+    if asset_filename := visual_assets.get(row["id"]):
+        tags.append(f"visual:asset:/quiz-media/{asset_filename}")
     return tags
 
 
@@ -179,13 +209,13 @@ def _matches_approved_content(question: Question, row: dict) -> bool:
     )
 
 
-def _apply_metadata(question: Question, row: dict, visual_plan: dict[int, dict]) -> None:
+def _apply_metadata(question: Question, row: dict, visual_plan: dict[int, dict], visual_assets: dict[int, str]) -> None:
     question.source = SOURCE
     question.source_id = f"grade4-{row['id']:03d}"
     question.source_url = row["source_url"].strip()
     question.source_license = SOURCE_LICENSE
     question.language = "ru"
-    question.tags = question_tags(row, visual_plan)
+    question.tags = question_tags(row, visual_plan, visual_assets)
     question.age_min = 10
     question.age_max = 11
     question.verified = True
@@ -197,6 +227,7 @@ async def sync_approved_metadata() -> dict[str, int]:
     """Attach approved source/visual metadata without changing questions or user progress."""
     rows = load_questions()
     visual_plan = load_visual_plan(rows)
+    visual_assets = load_visual_assets(rows)
     row_by_id = {row["id"]: row for row in rows}
     updated = 0
     async with get_db() as session:
@@ -212,15 +243,16 @@ async def sync_approved_metadata() -> dict[str, int]:
             row = row_by_id.get(question_id)
             if row is None or not _matches_approved_content(question, row):
                 raise ValueError(f"Database content differs from approved question {question_id}; no answer was changed")
-            _apply_metadata(question, row, visual_plan)
+            _apply_metadata(question, row, visual_plan, visual_assets)
             updated += 1
-    return {"updated_questions": updated, "visual_first_wave": sum(plan["recommended_action"] == FIRST_WAVE_ACTION for plan in visual_plan.values()), "visual_second_wave": sum(plan["recommended_action"] == SECOND_WAVE_ACTION for plan in visual_plan.values()), "text_only": sum(plan["recommended_action"] == TEXT_ACTION for plan in visual_plan.values())}
+    return {"updated_questions": updated, "visual_first_wave": sum(plan["recommended_action"] == FIRST_WAVE_ACTION for plan in visual_plan.values()), "visual_second_wave": sum(plan["recommended_action"] == SECOND_WAVE_ACTION for plan in visual_plan.values()), "text_only": sum(plan["recommended_action"] == TEXT_ACTION for plan in visual_plan.values()), "visual_assets": len(visual_assets)}
 
 
 async def replace_content(path: Path = CORPUS_PATH) -> dict[str, int]:
     """Replace questions and dependent rounds/progress with the approved corpus."""
     questions = load_questions(path)
     visual_plan = load_visual_plan(questions)
+    visual_assets = load_visual_assets(questions)
     async with get_db() as session:
         old_question_count = await session.scalar(select(func.count(Question.id)))
         await session.execute(delete(DailyResult))
@@ -265,7 +297,7 @@ async def replace_content(path: Path = CORPUS_PATH) -> dict[str, int]:
                 wrong_answers=[option for option in options if option != correct_answer],
                 explanation=row["explanation"].strip(), source=SOURCE,
                 source_id=f"grade4-{row['id']:03d}", source_url=row["source_url"].strip(),
-                source_license=SOURCE_LICENSE, language="ru", tags=question_tags(row, visual_plan),
+                source_license=SOURCE_LICENSE, language="ru", tags=question_tags(row, visual_plan, visual_assets),
                 age_min=10, age_max=11, verified=True, content_rating="kids", is_active=True,
             )
             session.add(question)
@@ -278,10 +310,12 @@ async def replace_content(path: Path = CORPUS_PATH) -> dict[str, int]:
 def audit_summary() -> dict[str, int]:
     questions = load_questions()
     visual_plan = load_visual_plan(questions)
+    visual_assets = load_visual_assets(questions)
     return {
         "questions": len(questions),
         "subjects": len(Counter(row["subject"] for row in questions)),
         "visual_first_wave": sum(plan["recommended_action"] == FIRST_WAVE_ACTION for plan in visual_plan.values()),
         "visual_second_wave": sum(plan["recommended_action"] == SECOND_WAVE_ACTION for plan in visual_plan.values()),
         "text_only": sum(plan["recommended_action"] == TEXT_ACTION for plan in visual_plan.values()),
+        "visual_assets": len(visual_assets),
     }

@@ -4,7 +4,7 @@ Date: 2026-08-10. This report distinguishes local evidence from unperformed exte
 
 | Gate | Status | Evidence / next proof |
 | --- | --- | --- |
-| Approved Grade 4 content + visual plan | PASS (local) | 500 active RU records in 5 subject packs x 100; answer-preserving metadata sync applied 74 first-wave visual, 32 reserve and 73 text-only decisions; audit: exact 0, fuzzy 0, invalid 0, missing provenance 0. Image assets remain a separate delivery. |
+| Approved Grade 4 content + visual plan | PASS (local) | 500 active RU records in 5 subject packs x 100; answer-preserving metadata sync applied 74 first-wave visual, 32 reserve and 73 text-only decisions; Visual Pack V1 binds and serves 10 images by `question_id`; audit: exact 0, fuzzy 0, invalid 0, missing provenance 0. |
 | Backend regression | PASS (local) | `pytest -q`: 23 passed after content and production preflight coverage |
 | Mini App | PASS (local) | clean `npm ci`, typecheck, Vitest and production build pass |
 | Production container | PASS (local runtime) | `quiz-battle:local` built, then isolated container returned `/health = ok` and `/ready = ready` |
