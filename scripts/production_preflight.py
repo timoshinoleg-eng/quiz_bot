@@ -10,10 +10,6 @@ REQUIRED = (
     "BOT_TOKEN",
     "BOT_USERNAME",
     "BOT_MODE",
-    "TELEGRAM_BOT_TOKEN",
-    "TELEGRAM_BOT_USERNAME",
-    "TELEGRAM_WEBHOOK_URL",
-    "TELEGRAM_WEBHOOK_SECRET",
     "MAX_WEBHOOK_URL",
     "MAX_WEBHOOK_SECRET",
     "DATABASE_URL",
@@ -46,8 +42,22 @@ def main() -> None:
         raise ValueError("DATABASE_URL must point to PostgreSQL in production")
     if not os.environ["PG_DSN"].startswith("postgresql://"):
         raise ValueError("PG_DSN must be a PostgreSQL client connection string")
-    for name in ("MINI_APP_URL", "TELEGRAM_WEBHOOK_URL", "MAX_WEBHOOK_URL"):
+    for name in ("MINI_APP_URL", "MAX_WEBHOOK_URL"):
         require_https(name)
+    telegram_values = {
+        name: os.getenv(name, "")
+        for name in (
+            "TELEGRAM_BOT_TOKEN",
+            "TELEGRAM_BOT_USERNAME",
+            "TELEGRAM_WEBHOOK_URL",
+            "TELEGRAM_WEBHOOK_SECRET",
+        )
+    }
+    if any(telegram_values.values()):
+        missing_telegram = [name for name, value in telegram_values.items() if invalid(value)]
+        if missing_telegram:
+            raise ValueError("incomplete Telegram production settings: " + ", ".join(missing_telegram))
+        require_https("TELEGRAM_WEBHOOK_URL")
     if os.environ["BOT_MODE"].lower() != "webhook":
         raise ValueError("BOT_MODE must equal webhook in production")
     print("production preflight: PASS")

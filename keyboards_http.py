@@ -99,8 +99,9 @@ def get_answers_keyboard_http(
     for idx, answer in enumerate(answers[:4]):
         payload = f"answer:{game_id}:{current_index}:{idx}"
         emoji = ANSWER_EMOJIS[idx] if idx < len(ANSWER_EMOJIS) else '⚪'
-        # Обрезаем ответ до 55 символов (оставляем место для эмодзи и буквы)
-        display_text = f"{emoji} {chr(65 + idx)}. {answer[:50]}"
+        # Full option text is rendered above the keyboard.  Keep button labels
+        # short so MAX does not truncate long answers or make them unreadable.
+        display_text = f"{emoji} {chr(65 + idx)}"
         buttons.append(KeyboardFactory.callback_button(display_text, payload))
     
     # Раскладка: 2 кнопки в ряд для мобильных

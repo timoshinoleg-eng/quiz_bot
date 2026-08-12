@@ -19,6 +19,15 @@ ENV/
 credentials*
 secrets*
 гитверс.txt
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+*.tfplan
+.terraform/
+.ssh-askpass.cmd
+crash.log
+crash.*.log
 frontend/node_modules/
 frontend/tsconfig.tsbuildinfo
 

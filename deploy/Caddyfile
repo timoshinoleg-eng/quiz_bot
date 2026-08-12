@@ -12,7 +12,7 @@
 		-Server
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
-		X-Frame-Options "DENY"
+		Content-Security-Policy "frame-ancestors 'self' https://*.max.ru https://web.max.ru"
 	}
 	reverse_proxy app:8000
 }

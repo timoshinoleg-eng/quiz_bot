@@ -49,7 +49,8 @@ logger = logging.getLogger("quiz_bot")
 
 try:
     from maxapi import Bot, Dispatcher
-    from maxapi.types import BotStarted, Command, MessageCallback, MessageCreated
+    from maxapi.types import BotStarted, Command, MessageCallback, MessageCreated, ShareAttachmentPayload
+    from maxapi.types.attachments import Share
     MAXAPI_AVAILABLE = True
 except ImportError:
     MAXAPI_AVAILABLE = False
@@ -80,6 +81,7 @@ except ImportError:
     Bot, Dispatcher = MockBot, MockDispatcher
     BotStarted = MessageCreated = MessageCallback = object
     Command = lambda *args, **kwargs: object()
+    Share = ShareAttachmentPayload = None
 
 
 class NoTokenBot:
@@ -127,12 +129,21 @@ bot = Bot(token=settings.BOT.token) if settings.BOT.token else NoTokenBot()
 dp = Dispatcher()
 http_client = MaxHttpClient(settings.BOT.token) if MaxHttpClient and settings.BOT.token else None
 keyboard_adapter = KeyboardAdapter(bot=bot, http_client=http_client, prefer_http=bool(http_client))
+_question_timeout_tasks: dict[tuple[int, int], asyncio.Task[Any]] = {}
+_question_timer_messages: dict[tuple[int, int], str] = {}
 logger.info(
     "runtime_initialized maxapi_available=%s http_client=%s bot_username=%s",
     MAXAPI_AVAILABLE,
     bool(http_client),
     settings.BOT.username or "unset",
 )
+
+ACHIEVEMENT_LABELS = {
+    "first_game": "🎮 Первый раунд",
+    "perfect": "💎 Идеальный раунд",
+    "streak_3": "🔥 Серия 3 дня",
+    "streak_7": "⚡ Серия 7 дней",
+}
 
 
 def _get_nested(event: Any, *paths: tuple[str, ...]) -> Any:
@@ -229,6 +240,35 @@ async def send_menu(chat_id: int, title: str = "🏠 Главное меню") -
     await send_text(chat_id, title, get_main_menu_keyboard_http(mini_app_url=settings.MINI_APP_URL))
 
 
+def format_achievements(achievements: list[str] | None) -> str:
+    return ", ".join(ACHIEVEMENT_LABELS.get(code, f"🏅 {code.replace('_', ' ')}") for code in (achievements or [])) or "пока нет"
+
+
+async def share_game_result(chat_id: int, user_id: int, game_id: int) -> None:
+    """Send a native MAX share card for a completed game owned by the caller."""
+    game = await db_manager.get_game(game_id)
+    if not game or game.user_id != user_id or game.status != "completed":
+        await send_text(chat_id, "Этот результат уже недоступен. Сыграй новый раунд!")
+        return
+    accuracy = round(game.correct_answers / max(1, game.question_count) * 100)
+    text = f"🏆 Я набрал {game.score} очков в Quiz Battle — {game.correct_answers}/{game.question_count} ({accuracy}%)!"
+    link = f"https://max.ru/{settings.BOT.username}" if settings.BOT.username else None
+    if MAXAPI_AVAILABLE and Share is not None:
+        try:
+            attachment = Share(
+                type="share",
+                title="Quiz Battle",
+                description=text,
+                payload=ShareAttachmentPayload(url=link) if link else ShareAttachmentPayload(),
+            )
+            await bot.send_message(chat_id=chat_id, text="📤 Нажми на карточку, чтобы поделиться результатом.", attachments=[attachment])
+            logger.info("share_card_sent chat_id=%s user_id=%s game_id=%s", chat_id, user_id, game_id)
+            return
+        except Exception:
+            logger.exception("share_card_send_failed chat_id=%s user_id=%s game_id=%s", chat_id, user_id, game_id)
+    await bot.send_message(chat_id=chat_id, text=f"{text}\n{link}" if link else text)
+
+
 async def send_question(chat_id: int, game_id: int) -> None:
     game = await db_manager.get_game(game_id)
     question = await db_manager.get_current_question(game_id)
@@ -246,11 +286,141 @@ async def send_question(chat_id: int, game_id: int) -> None:
     text = (
         f"❓ Вопрос {question.position + 1}/{game.question_count}\n\n"
         f"{question.question.text}\n\n"
+        "Варианты ответа:\n"
+        + "\n".join(
+            f"{chr(65 + index)}. {answer}"
+            for index, answer in enumerate(question.answer_options[:4])
+        )
+        + "\n\n"
         f"⏱ У тебя {settings.GAME.answer_timeout} секунд"
     )
     buttons = get_answers_keyboard_http(question.answer_options, question.position, game_id,
                                         total_questions=game.question_count)
     await send_text(chat_id, text, buttons)
+    timer_message_id = await _send_timer_message(chat_id, settings.GAME.answer_timeout)
+    _schedule_question_timeout(chat_id, game.user_id, game.id, question.position, timer_message_id)
+
+
+async def _send_timer_message(chat_id: int, timeout: int) -> Optional[str]:
+    """Send a separate editable countdown message and return its MAX message id."""
+    try:
+        result = await bot.send_message(
+            chat_id=chat_id,
+            text=f"⏱ Осталось времени: {timeout} сек.",
+        )
+        body = getattr(getattr(result, "message", None), "body", None)
+        message_id = getattr(body, "mid", None)
+        if message_id is None and isinstance(result, dict):
+            message_id = (
+                result.get("message", {}).get("body", {}).get("mid")
+                or result.get("message", {}).get("mid")
+                or result.get("mid")
+            )
+        if message_id is None:
+            logger.warning("timer_message_id_missing chat_id=%s", chat_id)
+            return None
+        logger.info("timer_message_sent chat_id=%s message_id=%s timeout=%s", chat_id, message_id, timeout)
+        return str(message_id)
+    except Exception:
+        logger.exception("timer_message_send_failed chat_id=%s", chat_id)
+        return None
+
+
+def _cancel_question_timeout(game_id: int, position: int) -> None:
+    task = _question_timeout_tasks.pop((game_id, position), None)
+    if task and task is not asyncio.current_task() and not task.done():
+        task.cancel()
+
+
+def _schedule_question_timeout(
+    chat_id: int,
+    user_id: int,
+    game_id: int,
+    position: int,
+    timer_message_id: Optional[str],
+) -> None:
+    _cancel_question_timeout(game_id, position)
+    if timer_message_id:
+        _question_timer_messages[(game_id, position)] = timer_message_id
+    task = asyncio.create_task(
+        _expire_question(chat_id, user_id, game_id, position, timer_message_id)
+    )
+    _question_timeout_tasks[(game_id, position)] = task
+
+
+async def _expire_question(
+    chat_id: int,
+    user_id: int,
+    game_id: int,
+    position: int,
+    timer_message_id: Optional[str],
+) -> None:
+    timeout = settings.GAME.answer_timeout
+    try:
+        deadline = asyncio.get_running_loop().time() + timeout
+        remaining = timeout
+        while remaining > 0:
+            await asyncio.sleep(min(5, remaining))
+            remaining = max(0, int(deadline - asyncio.get_running_loop().time() + 0.999))
+            if timer_message_id and remaining > 0:
+                try:
+                    await bot.edit_message(
+                        message_id=timer_message_id,
+                        text=f"⏱ Осталось времени: {remaining} сек.",
+                    )
+                    logger.info(
+                        "timer_message_updated message_id=%s remaining=%s",
+                        timer_message_id,
+                        remaining,
+                    )
+                except Exception:
+                    logger.exception(
+                        "timer_message_update_failed message_id=%s remaining=%s",
+                        timer_message_id,
+                        remaining,
+                    )
+        result = await db_manager.answer_game(game_id, user_id, position, -1, timeout)
+        if not result.get("ok") or result.get("duplicate"):
+            return
+        logger.info(
+            "question_timeout game_id=%s position=%s next=%s",
+            game_id,
+            position,
+            not result.get("game_over"),
+        )
+        game = result["game"]
+        await _update_timer_message(game_id, position, "⏰ Время вышло")
+        if result.get("game_over"):
+            await finish_message(chat_id, game)
+            return
+        await send_text(chat_id, "⏰ Время вышло. Ответ не засчитан.")
+        await send_question(chat_id, game.id)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("question_timeout_failed game_id=%s position=%s", game_id, position)
+    finally:
+        current = _question_timeout_tasks.get((game_id, position))
+        if current is asyncio.current_task():
+            _question_timeout_tasks.pop((game_id, position), None)
+        _question_timer_messages.pop((game_id, position), None)
+
+
+async def _update_timer_message(game_id: int, position: int, text: str) -> None:
+    message_id = _question_timer_messages.get((game_id, position))
+    if not message_id:
+        return
+    try:
+        await bot.edit_message(message_id=message_id, text=text)
+        logger.info("timer_message_updated message_id=%s text=%r", message_id, text)
+    except Exception:
+        logger.exception("timer_message_update_failed message_id=%s text=%r", message_id, text)
+
+
+def _cancel_all_question_timeouts() -> None:
+    for game_id, position in list(_question_timeout_tasks):
+        _cancel_question_timeout(game_id, position)
+    _question_timer_messages.clear()
 
 
 def _result_text(game: Any, prefix: str = "🏆 Результат") -> str:
@@ -402,7 +572,7 @@ async def cmd_join(event: MessageCreated):
 @dp.message_created(Command("stats"))
 async def cmd_stats(event: MessageCreated):
     user = await db_manager.get_or_create_user(get_user_id_from_event(event))
-    achievements = ", ".join(user.achievements or []) or "пока нет"
+    achievements = format_achievements(user.achievements)
     await send_text(get_chat_id_from_event(event),
                     f"👤 Профиль\n\n⭐ XP: {user.xp}\n🎚 Уровень: {user.level}\n"
                     f"🎮 Игр: {user.games_played}\n🏆 Побед: {user.games_won}\n"
@@ -477,6 +647,11 @@ async def handle_callback(event: MessageCallback):
             await answer_callback(user_id, chat_id, payload)
         elif payload.startswith("skip:"):
             await answer_callback(user_id, chat_id, payload.replace("skip:", "answer:") + ":-1")
+        elif payload.startswith("share:"):
+            try:
+                await share_game_result(chat_id, user_id, int(payload.split(":", 1)[1]))
+            except ValueError:
+                await send_text(chat_id, "Не удалось определить результат для публикации.")
         elif payload.startswith("challenge:rematch:"):
             old = await db_manager.get_challenge(int(payload.rsplit(":", 1)[1]))
             if old:
@@ -565,11 +740,19 @@ async def answer_callback(user_id: int, chat_id: int, payload: str) -> None:
     if result.get("duplicate"):
         await send_text(chat_id, "✅ Ответ уже засчитан.")
         return
+    await _update_timer_message(game_id, position, "✅ Ответ принят")
+    _cancel_question_timeout(game_id, position)
+    _question_timer_messages.pop((game_id, position), None)
     game = result["game"]
     if result.get("game_over"):
         await finish_message(chat_id, game)
         return
-    feedback = "✅ Верно!" if result["correct"] else f"❌ Неверно. Правильный ответ: {result['correct_answer']}"
+    if result.get("timed_out"):
+        feedback = f"⏰ Время вышло. Правильный ответ: {result['correct_answer']}"
+    elif result["correct"]:
+        feedback = "✅ Верно!"
+    else:
+        feedback = f"❌ Неверно. Правильный ответ: {result['correct_answer']}"
     await send_text(chat_id, feedback)
     await send_question(chat_id, game.id)
 
@@ -584,6 +767,7 @@ async def main() -> None:
         await bot.delete_webhook()
         await dp.start_polling(bot)
     finally:
+        _cancel_all_question_timeouts()
         if http_client:
             await http_client.close()
         close_session = getattr(bot, "close_session", None)

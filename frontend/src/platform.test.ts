@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readStartParam, telegramChallengeLink } from './platform';
+import { achievementDetails, readStartParam, telegramChallengeLink } from './platform';
 
 describe('platform deep-link helpers', () => {
   it('uses Telegram startapp before the plain URL fallback', () => {
@@ -10,5 +10,10 @@ describe('platform deep-link helpers', () => {
   it('creates an opaque challenge link and fails closed without a username', () => {
     expect(telegramChallengeLink('quiz_battle_bot', 'A B')).toBe('https://t.me/quiz_battle_bot?startapp=challenge_A%20B');
     expect(telegramChallengeLink(undefined, 'ABC')).toBe('');
+  });
+
+  it('renders achievement codes as player-facing badges', () => {
+    expect(achievementDetails('first_game')).toMatchObject({icon:'🎮',title:'Первый раунд'});
+    expect(achievementDetails('perfect')).toMatchObject({icon:'💎',title:'Идеальный раунд'});
   });
 });

@@ -15,10 +15,13 @@ set -a
 . "$RUNTIME_ENV"
 set +a
 
-test -n "${PG_DSN:-}" || { echo "missing PG_DSN for backup" >&2; exit 1; }
 install -d -m 0700 "$BACKUP_DIR"
-backup_file="$BACKUP_DIR/quiz-battle-$(date -u +%Y%m%dT%H%M%SZ).dump"
-pg_dump --format=custom --no-owner --file "$backup_file" "$PG_DSN"
+postgres_container=$(docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" ps -q postgres 2>/dev/null || true)
+if test -n "$postgres_container" && docker inspect --format '{{.State.Running}}' "$postgres_container" 2>/dev/null | grep -q true; then
+    backup_file="$BACKUP_DIR/quiz-battle-$(date -u +%Y%m%dT%H%M%SZ).dump"
+    docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" exec -T postgres \
+        pg_dump --format=custom --no-owner --username "$POSTGRES_USER" "$POSTGRES_DB" > "$backup_file"
+fi
 find "$BACKUP_DIR" -type f -name 'quiz-battle-*.dump' -mtime +14 -delete
 
 previous_container=$(docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" ps -q app 2>/dev/null || true)
@@ -29,7 +32,7 @@ fi
 
 docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" pull
 docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" run --rm migrate
-docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" up -d --remove-orphans app caddy
+docker compose --env-file "$DEPLOY_ENV" -f "$COMPOSE_FILE" up -d --remove-orphans postgres app caddy
 
 attempt=0
 until curl --fail --silent --show-error --max-time 10 "https://$PUBLIC_HOST/ready" >/dev/null; do

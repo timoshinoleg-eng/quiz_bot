@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -119,6 +120,54 @@ def test_answer_callback_does_not_leak_correct_index():
     assert all(len(payload.split(":")) == 4 for payload in payloads[:4])
 
 
+def test_answer_keyboard_uses_short_labels_for_long_options():
+    keyboard = get_answers_keyboard_http(
+        ["Очень длинный вариант ответа " * 10, "Вариант B", "Вариант C", "Вариант D"],
+        0,
+        42,
+        total_questions=10,
+    )
+    answer_buttons = [button for row in keyboard for button in row if button.get("payload", "").startswith("answer:")]
+    assert [button["text"] for button in answer_buttons] == ["🔵 A", "🟢 B", "🟡 C", "🔴 D"]
+
+
+def test_achievement_codes_have_player_facing_labels():
+    import bot
+
+    assert bot.format_achievements(["first_game", "perfect"]) == "🎮 Первый раунд, 💎 Идеальный раунд"
+
+
+@pytest.mark.asyncio
+async def test_share_result_sends_native_max_share_card():
+    import bot
+
+    game = SimpleNamespace(id=8, user_id=7, status="completed", score=420, correct_answers=4, question_count=5)
+    fake_bot = SimpleNamespace(send_message=AsyncMock())
+    with patch.object(bot.db_manager, "get_game", new=AsyncMock(return_value=game)), patch.object(bot, "bot", fake_bot), patch.object(bot, "MAXAPI_AVAILABLE", True):
+        await bot.share_game_result(70, 7, 8)
+
+    sent = fake_bot.send_message.await_args.kwargs
+    assert sent["chat_id"] == 70
+    assert sent["attachments"][0].type == "share"
+    assert sent["attachments"][0].description == "🏆 Я набрал 420 очков в Quiz Battle — 4/5 (80%)!"
+
+
+@pytest.mark.asyncio
+async def test_timer_message_uses_editable_max_message_id():
+    import bot
+
+    bot.bot = SimpleNamespace(
+        send_message=AsyncMock(
+            return_value=SimpleNamespace(
+                message=SimpleNamespace(body=SimpleNamespace(mid="timer-123"))
+            )
+        )
+    )
+    message_id = await bot._send_timer_message(77, 30)
+    assert message_id == "timer-123"
+    bot.bot.send_message.assert_awaited_once_with(chat_id=77, text="⏱ Осталось времени: 30 сек.")
+
+
 @pytest.mark.asyncio
 async def test_round_lengths_match_available_question_pool(database):
     assert await db.db_manager.available_question_count("general", "medium") == 20
@@ -126,6 +175,41 @@ async def test_round_lengths_match_available_question_pool(database):
     keyboard = get_question_count_keyboard_http([5, 10])
     payloads = [button["payload"] for row in keyboard for button in row if button.get("type") == "callback"]
     assert payloads == ["count:5", "count:10", "count:back"]
+
+
+@pytest.mark.asyncio
+async def test_wrong_answers_do_not_truncate_selected_round(database):
+    await db.db_manager.get_or_create_user(101, first_name="Раунд")
+    game = await db.db_manager.create_game(101, "general", "medium", 10)
+    for position in range(9):
+        current = await db.db_manager.get_current_question(game.id)
+        result = await db.db_manager.answer_game(game.id, 101, position, -1)
+        assert result["ok"] and result["game_over"] is False
+        assert current is not None
+        game = result["game"]
+    final = await db.db_manager.answer_game(game.id, 101, 9, -1)
+    assert final["ok"] and final["game_over"] is True
+    assert final["game"].question_count == 10
+    assert final["game"].answered_questions == 10
+
+
+@pytest.mark.asyncio
+async def test_answer_after_timeout_is_rejected_as_timed_out(database):
+    await db.db_manager.get_or_create_user(102, first_name="Таймер")
+    game = await db.db_manager.create_game(102, "general", "medium", 5)
+    async with db.get_db() as session:
+        row = (await session.execute(
+            db.select(db.GameQuestion).where(
+                db.GameQuestion.game_id == game.id,
+                db.GameQuestion.position == 0,
+            )
+        )).scalar_one()
+        row.sent_at = db.utcnow() - timedelta(seconds=31)
+    current = await db.db_manager.get_current_question(game.id)
+    result = await db.db_manager.answer_game(game.id, 102, 0, current.correct_index)
+    assert result["ok"] and result["timed_out"] is True
+    assert result["correct"] is False
+    assert result["points"] == 0
 
 
 def test_current_max_endpoint_and_model_tables():

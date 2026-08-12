@@ -374,7 +374,8 @@ class DatabaseManager:
 
             now = utcnow()
             elapsed = max(0.0, (now - (game_question.sent_at or now)).total_seconds())
-            correct = selected_index >= 0 and selected_index == game_question.correct_index
+            timed_out = elapsed >= float(answer_timeout)
+            correct = not timed_out and selected_index >= 0 and selected_index == game_question.correct_index
             points = 0
             if correct:
                 speed_ratio = max(0.0, 1.0 - min(elapsed, float(answer_timeout)) / answer_timeout)
@@ -401,13 +402,16 @@ class DatabaseManager:
             game.correct_answers += int(correct)
             game.answered_questions += 1
             if not correct:
-                game.lives_remaining -= 1
+                game.lives_remaining = max(0, game.lives_remaining - 1)
             game.current_question_index = position + 1
 
-            finished = game.lives_remaining <= 0 or game.current_question_index >= game.question_count
+            # The selected round length is authoritative.  Lives are retained as
+            # telemetry/compatibility state, but must not truncate a 10/15/20
+            # question round after three wrong or timed-out answers.
+            finished = game.current_question_index >= game.question_count
             if finished:
                 game.status = GameStatus.COMPLETED
-                game.finished_reason = "lives" if game.lives_remaining <= 0 else "complete"
+                game.finished_reason = "complete"
                 game.completed_at = now
                 await self._award_progress(db, game)
             else:
@@ -423,6 +427,7 @@ class DatabaseManager:
                 "ok": True,
                 "duplicate": False,
                 "correct": correct,
+                "timed_out": timed_out,
                 "points": points,
                 "correct_answer": game_question.question.correct_answer if not correct else None,
                 "game_over": finished,

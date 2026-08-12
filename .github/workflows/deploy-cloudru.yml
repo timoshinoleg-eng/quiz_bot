@@ -1,0 +1,49 @@
+name: Deploy Cloud.ru
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH trust
+        env:
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 600 "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Install Docker and deployment files
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          RUNTIME_ENV_B64: ${{ secrets.RUNTIME_ENV_B64 }}
+          GHCR_USERNAME: ${{ vars.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          target="$DEPLOY_USER@$DEPLOY_HOST"
+          ssh "$target" 'sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io docker-compose-v2 && sudo usermod -aG docker quizdeploy && sudo install -d -m 0750 -o quizdeploy -g quizdeploy /opt/quiz-battle'
+          scp deploy/compose.production.yml deploy/Caddyfile deploy/vm/deploy.sh "$target:/opt/quiz-battle/"
+          printf '%s' "$RUNTIME_ENV_B64" | base64 --decode | ssh "$target" 'umask 077; cat > /opt/quiz-battle/.env'
+          printf '%s' "$GHCR_TOKEN" | ssh "$target" "docker login ghcr.io --username '$GHCR_USERNAME' --password-stdin"
+          ssh "$target" 'chmod 750 /opt/quiz-battle/deploy.sh'
+      - name: Release exact image
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          IMAGE_REF: ${{ vars.IMAGE_REF }}
+          PUBLIC_HOST: ${{ vars.PUBLIC_HOST }}
+          ACME_EMAIL: ${{ vars.ACME_EMAIL }}
+        run: |
+          target="$DEPLOY_USER@$DEPLOY_HOST"
+          printf 'IMAGE_REF=%s\nPUBLIC_HOST=%s\nACME_EMAIL=%s\n' "$IMAGE_REF" "$PUBLIC_HOST" "$ACME_EMAIL" | ssh "$target" 'umask 077; cat > /opt/quiz-battle/.deploy.env; cd /opt/quiz-battle && ./deploy.sh'
