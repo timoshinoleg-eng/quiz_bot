@@ -16,12 +16,18 @@ jobs:
       - name: Prepare SSH trust
         env:
           DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
-          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
         run: |
           install -d -m 700 "$HOME/.ssh"
           printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
           chmod 600 "$HOME/.ssh/id_ed25519"
-          printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          for attempt in {1..12}; do
+            if ssh-keyscan -T 10 -H "$DEPLOY_HOST" > "$HOME/.ssh/known_hosts" 2>/dev/null && test -s "$HOME/.ssh/known_hosts"; then
+              break
+            fi
+            sleep 5
+          done
+          test -s "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
       - name: Install Docker and deployment files
         env:

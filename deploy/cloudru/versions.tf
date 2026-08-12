@@ -17,5 +17,6 @@ provider "cloudru" {
   endpoints = {
     iam_endpoint     = "iam.api.cloud.ru:443"
     compute_endpoint = "compute.api.cloud.ru:443"
+    vpc_endpoint     = "vpc.api.cloud.ru:443"
   }
 }
