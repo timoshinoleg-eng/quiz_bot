@@ -53,3 +53,11 @@ jobs:
         run: |
           target="$DEPLOY_USER@$DEPLOY_HOST"
           printf 'IMAGE_REF=%s\nPUBLIC_HOST=%s\nACME_EMAIL=%s\n' "$IMAGE_REF" "$PUBLIC_HOST" "$ACME_EMAIL" | ssh "$target" 'umask 077; cat > /opt/quiz-battle/.deploy.env; cd /opt/quiz-battle && ./deploy.sh'
+      - name: Disable password SSH access
+        if: ${{ success() }}
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+        run: |
+          target="$DEPLOY_USER@$DEPLOY_HOST"
+          printf '%s\n' 'PasswordAuthentication no' 'KbdInteractiveAuthentication no' 'PermitRootLogin no' | ssh "$target" 'sudo tee /etc/ssh/sshd_config.d/99-quiz-hardening.conf >/dev/null && sudo sshd -t && sudo systemctl reload ssh && sudo passwd -l quizdeploy'
