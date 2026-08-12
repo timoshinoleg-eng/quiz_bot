@@ -37,8 +37,8 @@ resource "cloudru_evolution_compute_subnet" "quiz" {
   subnet_address = var.subnet_address
   routed_network = true
   # Cloud.ru requires the first subnet in a new VDC to be its default subnet.
-  default        = true
-  vpc_id         = var.vpc_id
+  default = true
+  vpc_id  = var.vpc_id
 
   dns_servers = {
     value = ["1.1.1.1", "8.8.8.8"]
